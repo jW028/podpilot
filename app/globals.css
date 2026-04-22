@@ -1,26 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap");
 @import "tailwindcss";
 
+@theme {
+  /* Fonts */
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
+
+  /* primary brand color (gold) */
+  --color-primary-50: #faf8f3;
+  --color-primary-100: #f5f0e3;
+  --color-primary-200: #ede4c7;
+  --color-primary-300: #e1d4a8;
+  --color-primary-400: #d4be7f;
+  --color-primary-500: #c9a84c;
+  --color-primary-600: #b39643;
+  --color-primary-700: #9d8239;
+  --color-primary-800: #87702f;
+  --color-primary-900: #6b5824;
+
+  /* neutral palette */
+  --color-neutral-50: #fafaf8;
+  --color-neutral-100: #f4f3ef;
+  --color-neutral-200: #f7f6f2;
+  --color-neutral-300: #ede8e0;
+  --color-neutral-400: #9a9894;
+  --color-neutral-500: #6b6864;
+  --color-neutral-900: #141412;
+
+  /* custom light/dark utilities */
+  --color-light: #fafaf8;
+  --color-light-secondary: #f4f3ef;
+  --color-light-tertiary: #f7f6f2;
+  --color-light-muted: #6b6864;
+  --color-dark: #141412;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Fonts */
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-light);
+  color: var(--color-dark);
+  font-family: var(--font-sans);
 }
