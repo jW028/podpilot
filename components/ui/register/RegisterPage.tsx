@@ -1,7 +1,9 @@
 "use client";
 
-import React from "react";
-import Button from "@/components/ui/Button";
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/providers/AuthProvider";
+import Button from "@/components/ui/shared/Button";
 
 const registerStyles = {
   container: "min-h-screen flex flex-col bg-light",
@@ -18,14 +20,88 @@ const registerStyles = {
   checkboxLabel: "text-sm text-neutral-500",
   divider: "my-6 text-center text-xs text-neutral-400",
   link: "text-primary-500 hover:text-primary-600 transition",
-};
-
-const handleSubmit = (e: React.FormEvent) => {
-  e.preventDefault();
-  // TODO: registration backend
+  errorMessage:
+    "mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm",
+  successMessage:
+    "mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm",
 };
 
 const RegisterPage = () => {
+  const router = useRouter();
+  const { signUp } = useAuth();
+  const [fullname, setFullname] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    // Validation
+    if (!fullname.trim()) {
+      setError("Full name is required");
+      return;
+    }
+
+    if (!email.trim()) {
+      setError("Email is required");
+      return;
+    }
+
+    if (!password) {
+      setError("Password is required");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    if (!termsAccepted) {
+      setError("You must agree to the Terms of Service and Privacy Policy");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await signUp(email, password);
+      const { error: authError } = response as {
+        error: { message: string } | null;
+      };
+
+      if (authError) {
+        setError(
+          authError.message || "Failed to create account. Please try again.",
+        );
+      } else {
+        setSuccess(
+          "Account created successfully! Check your email to confirm.",
+        );
+        setTimeout(() => {
+          router.push("/login");
+        }, 2000);
+      }
+    } catch (err) {
+      setError("An unexpected error occurred. Please try again.");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <main className={registerStyles.container}>
       <div className={registerStyles.main}>
@@ -33,9 +109,14 @@ const RegisterPage = () => {
           <div className="mb-8">
             <h1 className={registerStyles.heading}>Create account</h1>
             <p className={registerStyles.subtext}>
-              Join Potpilot and start automating your store today
+              Join Podpilot and start automating your store today
             </p>
           </div>
+
+          {error && <div className={registerStyles.errorMessage}>{error}</div>}
+          {success && (
+            <div className={registerStyles.successMessage}>{success}</div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Full Name */}
@@ -48,6 +129,9 @@ const RegisterPage = () => {
                 type="text"
                 placeholder="John Doe"
                 className={registerStyles.input}
+                value={fullname}
+                onChange={(e) => setFullname(e.target.value)}
+                disabled={loading}
                 required
               />
             </div>
@@ -62,6 +146,9 @@ const RegisterPage = () => {
                 type="email"
                 placeholder="you@example.com"
                 className={registerStyles.input}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
                 required
               />
             </div>
@@ -76,6 +163,9 @@ const RegisterPage = () => {
                 type="password"
                 placeholder="••••••••"
                 className={registerStyles.input}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
                 required
               />
             </div>
@@ -90,6 +180,9 @@ const RegisterPage = () => {
                 type="password"
                 placeholder="••••••••"
                 className={registerStyles.input}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={loading}
                 required
               />
             </div>
@@ -100,6 +193,9 @@ const RegisterPage = () => {
                 id="terms"
                 type="checkbox"
                 className={registerStyles.checkboxInput}
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                disabled={loading}
                 required
               />
               <label htmlFor="terms" className={registerStyles.checkboxLabel}>
@@ -120,8 +216,9 @@ const RegisterPage = () => {
               size="md"
               className="w-full"
               type="submit"
+              disabled={loading}
             >
-              Create account
+              {loading ? "Creating account..." : "Create account"}
             </Button>
           </form>
 
