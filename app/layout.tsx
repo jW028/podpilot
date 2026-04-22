@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Podpilot",
+  title: "Potpilot",
   description:
-    "AI-powered automation tool for print on demand businesses using Printify.",
+    "Orchestrate intelligent agents to automate product creation, publishing, customer support, and analytics for your online store.",
 };
 
 export default function RootLayout({
@@ -28,7 +28,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="font-sans min-h-full flex flex-col">{children}</body>
     </html>
   );
 }
