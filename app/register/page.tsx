@@ -1,6 +1,6 @@
-import Footer from "@/components/Footer";
-import Header from "@/components/Header";
-import RegisterPage from "@/components/register/RegisterPage";
+import Footer from "@/components/ui/Footer";
+import Header from "@/components/ui/Header";
+import RegisterPage from "@/components/ui/register/RegisterPage";
 import React from "react";
 
 const Register = () => {

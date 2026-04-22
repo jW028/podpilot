@@ -22,7 +22,7 @@ const Footer = () => {
       <div className={footerStyles.wrapper}>
         {/* logo & social links */}
         <div className={footerStyles.topSection}>
-          <Image src="/logo.svg" alt="Potpilot logo" width={75} height={25} />
+          <Image src="/logo.svg" alt="Podpilot logo" width={75} height={25} />
           <div className="flex gap-6">
             <a href="#" className={footerStyles.socialLink}>
               Twitter
@@ -126,7 +126,7 @@ const Footer = () => {
         {/* copyright */}
         <div className={`pt-8 border-t ${footerStyles.divider} text-center`}>
           <p className={footerStyles.copyright}>
-            &copy; {currentYear} Potpilot. All rights reserved.
+            &copy; {currentYear} Podpilot. All rights reserved.
           </p>
         </div>
       </div>
