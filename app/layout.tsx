@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Potpilot - AI-Powered Store Automation",
+  title: "Potpilot",
   description:
     "Orchestrate intelligent agents to automate product creation, publishing, customer support, and analytics for your online store.",
 };
