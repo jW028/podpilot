@@ -145,7 +145,7 @@ function RevenueChart({ chartData }: { chartData: ChartPoint[] }) {
 
   return (
     <>
-      <div className="flex items-end gap-[4px] flex-1 mt-[10px]">
+      <div className="flex items-end gap-[4px] h-[120px] mt-[10px]">
         {chartData.map((point, i) => {
           const heightPct = Math.max((point.revenue / maxRevenue) * 100, 4);
           return (
@@ -261,6 +261,54 @@ export default function FinancePage({ businessId }: { businessId: string }) {
     URL.revokeObjectURL(url);
   }, [products, businessId]);
 
+  // ── Generate Report ─────────────────────────────────────────────────────
+  const handleGenerateReport = useCallback(() => {
+    if (!hasData || !summary) return;
+
+    const lines: string[] = [];
+    lines.push(`FINANCE REPORT — ${businessName}`);
+    lines.push(`Generated: ${new Date().toLocaleString("en-MY")}`);
+    lines.push(`Period: Last ${days} days`);
+    lines.push("");
+    lines.push("── SUMMARY ──────────────────────────");
+    lines.push(`Revenue:    ${rm(summary.total_revenue)}`);
+    lines.push(`Costs:      ${rm(summary.total_costs)}`);
+    lines.push(`Net Profit: ${rm(summary.total_profit)}`);
+    lines.push(`Margin:     ${pct(summary.overall_margin_pct)}`);
+    lines.push(`Orders:     ${summary.total_orders}`);
+    lines.push("");
+    lines.push("── PRODUCT PERFORMANCE ───────────────");
+    products.forEach((p) => {
+      lines.push(`${p.title}`);
+      lines.push(`  Units: ${p.units_sold} | Revenue: ${rm(p.revenue)} | Profit: ${rm(p.profit)} | Margin: ${pct(p.margin_pct)}`);
+    });
+    lines.push("");
+    lines.push("── AGENT SIGNALS ─────────────────────");
+    if (signals.length > 0) {
+      signals.forEach((s) => {
+        lines.push(`[${s.action.toUpperCase()}] ${s.product_name}`);
+        lines.push(`  ${s.reason}`);
+      });
+    } else {
+      lines.push("No active signals.");
+    }
+    lines.push("");
+    if (messages.length > 0) {
+      lines.push("── FINANCE AGENT INSIGHTS ────────────");
+      const aiMessages = messages.filter((m) => m.role === "ai");
+      aiMessages.forEach((m) => lines.push(m.text));
+    }
+
+    const content = lines.join("\n");
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `finance-report-${businessId}-${new Date().toISOString().split("T")[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [hasData, summary, products, signals, messages, businessName, days, businessId]);
+
   // ── Render ──────────────────────────────────────────────────────────────
   return (
     <>
@@ -283,6 +331,7 @@ export default function FinancePage({ businessId }: { businessId: string }) {
             Export CSV
           </button>
           <button
+            onClick={handleGenerateReport}
             disabled={!hasData}
             className="px-[16px] py-[8px] rounded-[8px] border-none bg-[#C9A84C] hover:bg-[#9E7A2E] disabled:opacity-40 disabled:cursor-not-allowed text-[#FAFAF8] text-[13px] font-medium transition cursor-pointer flex items-center gap-[6px]"
           >
@@ -373,7 +422,9 @@ export default function FinancePage({ businessId }: { businessId: string }) {
                       ? `Last ${chartData.length} months · ${marketplace ? marketplace.charAt(0).toUpperCase() + marketplace.slice(1) : "all channels"}`
                       : "No history available"}
                   </div>
-                  <RevenueChart chartData={chartData} />
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <RevenueChart chartData={chartData} />
+                  </div>
                 </div>
 
                 {/* Agent Signals */}
