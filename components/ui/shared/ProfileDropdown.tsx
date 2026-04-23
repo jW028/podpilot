@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { FiChevronDown, FiLogOut, FiUser } from "react-icons/fi";
+import { FiLogOut } from "react-icons/fi";
+import { BiUser } from "react-icons/bi";
 
 const ProfileDropdown = () => {
   const { user, signOut } = useAuth();
@@ -55,7 +56,7 @@ const ProfileDropdown = () => {
       {/* Profile Avatar Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center text-sm justify-center gap-2 w-8 h-8 rounded-full bg-primary-500 text-light hover:bg-primary-600 transition-colors"
+        className="flex items-center text-sm justify-center gap-2 w-8 h-8 rounded-full bg-dark text-light hover:bg-neutral-700 transition-colors"
         aria-label="User profile menu"
       >
         {getInitials()}
@@ -63,20 +64,26 @@ const ProfileDropdown = () => {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 bg-light border border-neutral-200 rounded-lg shadow-lg z-50">
+        <div className="absolute right-0 mt-2 bg-light border border-neutral-200 rounded-lg shadow-lg z-50">
           {/* User Email */}
-          <div className="px-4 py-3 border-b border-neutral-200">
-            <p className="text-xs text-neutral-500 font-medium">Email</p>
-            <p className="text-sm text-neutral-900 truncate">{user.email}</p>
+          <div className="px-4 py-3 flex items-center gap-2 border-neutral-200">
+            <BiUser size={12} />
+            <p className="text-xs text-neutral-900 truncate">{user.email}</p>
+          </div>
+
+          <div className="flex justify-center items-center">
+            <hr className="border-neutral-300 w-11/12" />
           </div>
 
           {/* Logout Button */}
           <button
             onClick={handleLogout}
-            className="w-full px-4 py-3 flex items-center gap-2 text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
+            className="w-full px-1.5 py-1.5 text-xs text-neutral-700"
           >
-            <FiLogOut size={16} />
-            <span>Logout</span>
+            <div className="flex px-2.5 rounded py-1.5 items-center gap-2 hover:bg-neutral-100 transition-colors">
+              <FiLogOut size={12} />
+              <p>Logout</p>
+            </div>
           </button>
         </div>
       )}
