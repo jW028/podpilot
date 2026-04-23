@@ -41,7 +41,7 @@ export default function ProtectedLayout({
       {/* Below header: sidebar + main content side by side */}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar businessId={businessId} />
-        <main className="flex-1 overflow-y-auto bg-[#F7F6F2]">
+        <main className="flex-1 overflow-y-auto bg-light">
           <div className="p-6">{children}</div>
         </main>
       </div>
