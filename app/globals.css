@@ -1,26 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap");
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-sans), 'DM Sans', sans-serif;
-  --font-serif: var(--font-serif), 'DM Serif Display', serif;
+  /* Fonts */
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
+
+  /* primary brand color (gold) */
+  --color-primary-50: #faf8f3;
+  --color-primary-100: #f5f0e3;
+  --color-primary-200: #ede4c7;
+  --color-primary-300: #e1d4a8;
+  --color-primary-400: #d4be7f;
+  --color-primary-500: #c9a84c;
+  --color-primary-600: #b39643;
+  --color-primary-700: #9d8239;
+  --color-primary-800: #87702f;
+  --color-primary-900: #6b5824;
+
+  /* neutral palette */
+  --color-neutral-50: #fafaf8;
+  --color-neutral-100: #f4f3ef;
+  --color-neutral-200: #f7f6f2;
+  --color-neutral-300: #ede8e0;
+  --color-neutral-400: #9a9894;
+  --color-neutral-500: #6b6864;
+  --color-neutral-900: #141412;
+
+  /* custom light/dark utilities */
+  --color-light: #fafaf8;
+  --color-light-secondary: #f4f3ef;
+  --color-light-tertiary: #f7f6f2;
+  --color-light-muted: #6b6864;
+  --color-dark: #141412;
 }
 
 :root {
-  --black: #141412;
-  --charcoal: #2A2A27;
-  --dark-gray: #6B6A64;
-  --mid-gray: #C4C3BC;
-  --light-gray: #E8E7E2;
-  --off-white: #F4F3EF;
-  --white: #FAFAF8;
-  --bg: #F7F6F2;
-  
-  --gold: #C9A84C;
-  --gold-light: #E8D08A;
-  --gold-muted: #9E7A2E;
+  /* Fonts */
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
 }
 
 body {
-  background-color: var(--bg);
-  color: var(--black);
+  background: var(--color-light);
+  color: var(--color-dark);
+  font-family: var(--font-sans);
 }
