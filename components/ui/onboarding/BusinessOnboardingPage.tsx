@@ -9,15 +9,6 @@ interface BusinessOnboardingPageProps {
   businessId: string;
 }
 
-interface OnboardingInput {
-  businessName: string;
-  vibe: string;
-  targetAudience: string;
-  purpose: string;
-  productDirection: string;
-  confidence: number;
-}
-
 interface BusinessFramework {
   niche: string;
   theme: string;
@@ -31,25 +22,61 @@ interface BusinessFramework {
   next30Days: string[];
 }
 
-const defaultInput: OnboardingInput = {
-  businessName: "",
-  vibe: "",
-  targetAudience: "",
-  purpose: "",
-  productDirection: "",
-  confidence: 5,
+interface ChatMessage {
+  id: string;
+  role: "assistant" | "user";
+  content: string;
+}
+
+const hasProceedIntent = (message: string) => {
+  const normalized = message.toLowerCase().trim();
+  const positiveSignals = [
+    "proceed",
+    "go ahead",
+    "continue",
+    "sounds good",
+    "yes",
+    "confirm",
+    "i'm confident",
+    "im confident",
+    "move forward",
+    "let's do it",
+  ];
+
+  const negativeSignals = ["not sure", "wait", "revise", "change this"];
+  const hasNegative = negativeSignals.some((signal) =>
+    normalized.includes(signal),
+  );
+
+  if (hasNegative) {
+    return false;
+  }
+
+  return positiveSignals.some((signal) => normalized.includes(signal));
 };
+
+const randomId = () => Math.random().toString(36).slice(2, 10);
 
 const styles = {
   container: "max-w-4xl mx-auto",
   heading: "font-serif text-3xl font-bold text-light-primary mb-2",
   subtext: "text-neutral-500 text-sm mb-8",
-  card: "bg-white border border-neutral-300 rounded-xl p-6",
-  sectionTitle: "font-serif text-xl text-light-primary mb-4",
-  label:
-    "block text-xs uppercase tracking-wide font-medium text-neutral-500 mb-2",
-  input:
-    "w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-light-primary bg-light",
+  panel: "bg-white border border-neutral-300 rounded-xl overflow-hidden",
+  panelHeader: "bg-dark text-light px-6 py-4 flex items-center justify-between",
+  panelTitle: "font-semibold",
+  panelSub: "text-xs text-neutral-300 mt-1",
+  chatBody: "p-5 space-y-4 max-h-[65vh] overflow-y-auto bg-light-secondary",
+  messageRow: "flex items-start gap-3",
+  avatar:
+    "h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold",
+  aiAvatar: "bg-dark text-light",
+  userAvatar: "bg-primary-500 text-light",
+  bubble: "rounded-xl px-4 py-3 text-sm leading-relaxed",
+  aiBubble: "bg-neutral-100 text-dark max-w-[85%]",
+  userBubble: "bg-dark text-light max-w-[80%] ml-auto",
+  frameworkCard: "bg-white border border-primary-300 rounded-xl p-4",
+  frameworkTitle: "text-xs uppercase tracking-wide text-primary-700 font-semibold",
+  chatFooter: "p-4 border-t border-neutral-300 bg-white",
   textarea:
     "w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-light-primary bg-light min-h-24",
   alertError:
@@ -62,66 +89,38 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
   const router = useRouter();
   const { user, session } = useAuth();
 
-  const [input, setInput] = useState<OnboardingInput>(defaultInput);
   const [framework, setFramework] = useState<BusinessFramework | null>(null);
-  const [confirmationMessage, setConfirmationMessage] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: randomId(),
+      role: "assistant",
+      content:
+        "I am your Business Genesis Agent. Tell me your business idea, desired vibe, target audience, and product direction. I will help you shape a clear business direction before we hand off to design.",
+    },
+  ]);
+  const [draftMessage, setDraftMessage] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const isInputValid = useMemo(() => {
-    return (
-      input.businessName.trim().length > 1 &&
-      input.vibe.trim().length > 2 &&
-      input.targetAudience.trim().length > 2 &&
-      input.purpose.trim().length > 2 &&
-      input.productDirection.trim().length > 2
-    );
-  }, [input]);
+  const simplifiedMessages = useMemo(
+    () => messages.map(({ role, content }) => ({ role, content })),
+    [messages],
+  );
 
-  const handleGenerate = async () => {
-    setError("");
-    setSuccess("");
-
-    if (!isInputValid) {
-      setError("Please fill in all core fields before generating the framework.");
-      return;
-    }
-
-    setIsGenerating(true);
-
-    try {
-      const response = await fetch("/api/business/onboarding/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ input }),
-      });
-
-      const result = (await response.json()) as {
-        success: boolean;
-        data?: BusinessFramework;
-        message?: string;
-      };
-
-      if (!response.ok || !result.success || !result.data) {
-        setError(result.message ?? "Failed to generate business framework.");
-        return;
-      }
-
-      setFramework(result.data);
-      setSuccess("Framework generated. Review and confirm to continue.");
-    } catch (generationError) {
-      console.error(generationError);
-      setError("Something went wrong while generating the framework.");
-    } finally {
-      setIsGenerating(false);
-    }
+  const pushAssistantMessage = (content: string) => {
+    setMessages((previous) => [
+      ...previous,
+      {
+        id: randomId(),
+        role: "assistant",
+        content,
+      },
+    ]);
   };
 
-  const handleConfirmAndContinue = async () => {
+  const submitConfirmation = async (confirmationMessage: string) => {
     setError("");
     setSuccess("");
 
@@ -131,12 +130,7 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
     }
 
     if (!framework) {
-      setError("Generate a framework before confirming.");
-      return;
-    }
-
-    if (!confirmationMessage.trim()) {
-      setError("Type your confirmation message so the agent can verify intent.");
+      setError("Please continue chatting until the framework is ready.");
       return;
     }
 
@@ -151,7 +145,14 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
         },
         body: JSON.stringify({
           businessId,
-          input,
+          input: {
+            businessName: framework.theme,
+            vibe: framework.vibeKeywords.join(", "),
+            targetAudience: framework.targetAudience,
+            purpose: framework.valueProposition,
+            productDirection: framework.productLane,
+            confidence: 8,
+          },
           framework,
           confirmationMessage,
         }),
@@ -178,200 +179,196 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
     }
   };
 
+  const handleSendMessage = async () => {
+    setError("");
+    setSuccess("");
+
+    const trimmed = draftMessage.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const userMessage: ChatMessage = {
+      id: randomId(),
+      role: "user",
+      content: trimmed,
+    };
+
+    setMessages((previous) => [...previous, userMessage]);
+    setDraftMessage("");
+    setIsThinking(true);
+
+    try {
+      const response = await fetch("/api/business/onboarding/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          businessId,
+          messages: [...simplifiedMessages, { role: "user", content: trimmed }],
+          framework,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        success: boolean;
+        message?: string;
+        data?: {
+          reply: string;
+          frameworkReady: boolean;
+          framework?: BusinessFramework;
+        };
+      };
+
+      if (!response.ok || !result.success || !result.data) {
+        setError(result.message || "Could not continue the conversation.");
+        return;
+      }
+
+      pushAssistantMessage(result.data.reply);
+
+      const latestFramework =
+        result.data.framework && result.data.frameworkReady
+          ? result.data.framework
+          : framework;
+
+      if (result.data.framework && result.data.frameworkReady) {
+        setFramework(result.data.framework);
+      }
+
+      if (latestFramework && hasProceedIntent(trimmed)) {
+        await submitConfirmation(trimmed);
+      }
+    } catch (chatError) {
+      console.error(chatError);
+      setError("Conversation failed. Please try again.");
+    } finally {
+      setIsThinking(false);
+    }
+  };
+
   return (
     <section className={styles.container}>
       <div className="mb-8">
         <h1 className={styles.heading}>Business Onboarding</h1>
         <p className={styles.subtext}>
-          Define your business direction first. Design confirmation will happen in
-          the Design Agent phase.
+          Chat with Business Genesis Agent to confirm the business feeling, theme,
+          vibe, and direction before moving to workflow.
         </p>
       </div>
 
       {error && <div className={styles.alertError}>{error}</div>}
       {success && <div className={styles.alertSuccess}>{success}</div>}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className={styles.card}>
-          <h2 className={styles.sectionTitle}>Input</h2>
-
-          <label htmlFor="businessName" className={styles.label}>
-            Business Name
-          </label>
-          <input
-            id="businessName"
-            className={styles.input}
-            placeholder="e.g. MokiPrints"
-            value={input.businessName}
-            onChange={(event) =>
-              setInput((previous) => ({
-                ...previous,
-                businessName: event.target.value,
-              }))
-            }
-          />
-
-          <label htmlFor="vibe" className={`${styles.label} mt-4`}>
-            Feeling, Theme, Vibe
-          </label>
-          <textarea
-            id="vibe"
-            className={styles.textarea}
-            placeholder="e.g. minimalist, calm, modern Malaysia-inspired"
-            value={input.vibe}
-            onChange={(event) =>
-              setInput((previous) => ({ ...previous, vibe: event.target.value }))
-            }
-          />
-
-          <label htmlFor="targetAudience" className={`${styles.label} mt-4`}>
-            Target Audience
-          </label>
-          <textarea
-            id="targetAudience"
-            className={styles.textarea}
-            placeholder="e.g. Malaysian young adults 18-30 who prefer clean aesthetics"
-            value={input.targetAudience}
-            onChange={(event) =>
-              setInput((previous) => ({
-                ...previous,
-                targetAudience: event.target.value,
-              }))
-            }
-          />
-
-          <label htmlFor="purpose" className={`${styles.label} mt-4`}>
-            Business Purpose
-          </label>
-          <textarea
-            id="purpose"
-            className={styles.textarea}
-            placeholder="e.g. side income with long-term brand potential"
-            value={input.purpose}
-            onChange={(event) =>
-              setInput((previous) => ({
-                ...previous,
-                purpose: event.target.value,
-              }))
-            }
-          />
-
-          <label htmlFor="productDirection" className={`${styles.label} mt-4`}>
-            Product Direction (No Design Yet)
-          </label>
-          <textarea
-            id="productDirection"
-            className={styles.textarea}
-            placeholder="e.g. start with tees and tote bags, then move to phone cases"
-            value={input.productDirection}
-            onChange={(event) =>
-              setInput((previous) => ({
-                ...previous,
-                productDirection: event.target.value,
-              }))
-            }
-          />
-
-          <label htmlFor="confidence" className={`${styles.label} mt-4`}>
-            Current Confidence ({input.confidence}/10)
-          </label>
-          <input
-            id="confidence"
-            type="range"
-            min={1}
-            max={10}
-            className="w-full accent-primary-500"
-            value={input.confidence}
-            onChange={(event) =>
-              setInput((previous) => ({
-                ...previous,
-                confidence: Number(event.target.value),
-              }))
-            }
-          />
-
-          <div className="mt-6">
-            <Button
-              variant="primary"
-              size="md"
-              onClick={handleGenerate}
-              disabled={isGenerating}
-            >
-              {isGenerating ? "Generating..." : "Generate Business Direction"}
-            </Button>
+      <div className={styles.panel}>
+        <div className={styles.panelHeader}>
+          <div>
+            <p className={styles.panelTitle}>Business Genesis Agent</p>
+            <p className={styles.panelSub}>Building your brand identity</p>
           </div>
+          <p className="text-xs text-primary-300">
+            {isThinking ? "Thinking..." : "Connected"}
+          </p>
         </div>
 
-        <div className={styles.card}>
-          <h2 className={styles.sectionTitle}>Confirmed Direction</h2>
-
-          {!framework ? (
-            <p className="text-sm text-neutral-500">
-              Generate the framework first. You will review it here before
-              confirming.
-            </p>
-          ) : (
-            <div className="space-y-4 text-sm text-neutral-700">
-              <div>
-                <p className="font-semibold text-light-primary">Niche</p>
-                <p>{framework.niche}</p>
-              </div>
-              <div>
-                <p className="font-semibold text-light-primary">Theme</p>
-                <p>{framework.theme}</p>
-              </div>
-              <div>
-                <p className="font-semibold text-light-primary">Vibe Keywords</p>
-                <p>{framework.vibeKeywords.join(", ")}</p>
-              </div>
-              <div>
-                <p className="font-semibold text-light-primary">Brand Voice</p>
-                <p>{framework.brandVoice}</p>
-              </div>
-              <div>
-                <p className="font-semibold text-light-primary">Product Lane</p>
-                <p>{framework.productLane}</p>
-              </div>
-              <div>
-                <p className="font-semibold text-light-primary">Malaysia Trend Note</p>
-                <p>{framework.malaysiaTrendNote}</p>
-              </div>
-              <div>
-                <p className="font-semibold text-light-primary">Next 30 Days</p>
-                <ul className="list-disc ml-5 space-y-1">
-                  {framework.next30Days.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="font-semibold text-light-primary">
-                  Confirmation Message
-                </p>
-                <textarea
-                  className={styles.textarea}
-                  placeholder="e.g. yes, proceed with this business direction"
-                  value={confirmationMessage}
-                  onChange={(event) => setConfirmationMessage(event.target.value)}
-                />
-                <p className="text-xs text-neutral-500 mt-2">
-                  Intent-based confirmations are accepted as long as you clearly
-                  indicate confidence to proceed.
-                </p>
-              </div>
-
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={handleConfirmAndContinue}
-                disabled={isSubmitting}
+        <div className={styles.chatBody}>
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className={`${styles.messageRow} ${
+                message.role === "user" ? "justify-end" : ""
+              }`}
+            >
+              {message.role === "assistant" && (
+                <div className={`${styles.avatar} ${styles.aiAvatar}`}>AI</div>
+              )}
+              <div
+                className={`${styles.bubble} ${
+                  message.role === "assistant" ? styles.aiBubble : styles.userBubble
+                }`}
               >
-                {isSubmitting
-                  ? "Confirming..."
-                  : "Confirm Direction and Go to Workflow"}
-              </Button>
+                {message.content}
+              </div>
+              {message.role === "user" && (
+                <div className={`${styles.avatar} ${styles.userAvatar}`}>You</div>
+              )}
+            </div>
+          ))}
+
+          {framework && (
+            <div className={styles.frameworkCard}>
+              <p className={styles.frameworkTitle}>Confirmed Business Direction</p>
+              <div className="mt-3 text-sm text-neutral-700 space-y-2">
+                <p>
+                  <span className="font-semibold text-dark">Theme:</span>{" "}
+                  {framework.theme}
+                </p>
+                <p>
+                  <span className="font-semibold text-dark">Niche:</span>{" "}
+                  {framework.niche}
+                </p>
+                <p>
+                  <span className="font-semibold text-dark">Audience:</span>{" "}
+                  {framework.targetAudience}
+                </p>
+                <p>
+                  <span className="font-semibold text-dark">Product Lane:</span>{" "}
+                  {framework.productLane}
+                </p>
+                <p>
+                  <span className="font-semibold text-dark">Vibe:</span>{" "}
+                  {framework.vibeKeywords.join(", ")}
+                </p>
+                <p>
+                  <span className="font-semibold text-dark">Malaysia Trend:</span>{" "}
+                  {framework.malaysiaTrendNote}
+                </p>
+                <div className="pt-2 flex flex-wrap gap-3">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      submitConfirmation("Yes, proceed with this business direction")
+                    }
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? "Confirming..." : "Confirm and Continue"}
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
+
+          {isThinking && (
+            <div className="text-xs text-primary-700 border border-primary-300 rounded-lg px-3 py-2 bg-primary-50 inline-block">
+              Finalizing business profile and strategy...
+            </div>
+          )}
+        </div>
+
+        <div className={styles.chatFooter}>
+          <div className="flex gap-3 items-end">
+            <textarea
+              className={styles.textarea}
+              placeholder="Reply to Genesis Agent..."
+              value={draftMessage}
+              onChange={(event) => setDraftMessage(event.target.value)}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSendMessage}
+              disabled={isThinking || !draftMessage.trim()}
+            >
+              Send
+            </Button>
+          </div>
+          <p className="text-xs text-neutral-500 mt-2">
+            Tip: once the direction looks good, reply naturally with confirmation
+            intent, for example &quot;yes, proceed with this business
+            direction&quot;.
+          </p>
         </div>
       </div>
     </section>
