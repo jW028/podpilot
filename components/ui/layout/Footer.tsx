@@ -1,5 +1,6 @@
 import Image from "next/image";
 import React from "react";
+import Logo from "../shared/Logo";
 
 // Styling configuration for Footer
 const footerStyles = {
@@ -22,7 +23,7 @@ const Footer = () => {
       <div className={footerStyles.wrapper}>
         {/* logo & social links */}
         <div className={footerStyles.topSection}>
-          <Image src="/logo.svg" alt="Potpilot logo" width={75} height={25} />
+          <Logo />
           <div className="flex gap-6">
             <a href="#" className={footerStyles.socialLink}>
               Twitter
@@ -126,7 +127,7 @@ const Footer = () => {
         {/* copyright */}
         <div className={`pt-8 border-t ${footerStyles.divider} text-center`}>
           <p className={footerStyles.copyright}>
-            &copy; {currentYear} Potpilot. All rights reserved.
+            &copy; {currentYear} Podpilot. All rights reserved.
           </p>
         </div>
       </div>

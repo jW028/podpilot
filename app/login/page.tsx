@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import Button from "@/components/ui/Button";
+import Button from "@/components/ui/shared/Button";
 
 const loginStyles = {
   container: "min-h-screen flex flex-col bg-light",
