@@ -43,11 +43,8 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
   // Using the PRINTIFY_DEV_TOKEN from .env file for integration.
   const printifyToken = process.env.PRINTIFY_DEV_TOKEN;
 
-  if (!printifyToken || !shopId) {
-    throw new Error('Printify not connected for this business. Connect it first in Launch & Integrations.');
-  }
-
-  // 2. Check cache — avoid re-running if we have a fresh snapshot from today
+  // 2. Check cache FIRST — serve cached snapshot even without Printify credentials.
+  //    This allows mock/seeded data to load during development without a live Printify token.
   const today = new Date().toISOString().split('T')[0];
 
   // FIX #5: Use .maybeSingle() instead of .single().
@@ -73,7 +70,12 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
     };
   }
 
-  // 3. Build the tool executor — the GLM agent will call these by name
+  // 3. Printify credentials required only for a live run (no cache hit)
+  if (!printifyToken || !shopId) {
+    throw new Error('Printify not connected for this business. Connect it first in Launch & Integrations.');
+  }
+
+  // 4. Build the tool executor — the GLM agent will call these by name
   const toolState: any = {};  // { orders: [...], metrics: { summary, by_product } }
   const toolContext = { printifyToken, shopId, days, toolState };
 

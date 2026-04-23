@@ -371,19 +371,10 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
                         </tr>
                       ))
                     ) : (
-                      /* Fallback placeholder row */
-                      <tr className="border-b border-[#E8E7E2] last:border-none">
-                        <td className="px-[20px] py-[12px] text-[13px]">#1052</td>
-                        <td className="px-[20px] py-[12px] font-medium text-[#141412] text-[13px]">
-                          Sunset Tote Bag
+                      <tr>
+                        <td colSpan={7} className="px-[20px] py-[16px] text-[13px] text-[#6B6A64] text-center">
+                          No order data available yet.
                         </td>
-                        <td className="px-[20px] py-[12px] text-[#6B6A64] text-[13px]">Shopee</td>
-                        <td className="px-[20px] py-[12px] text-[13px]">RM 49</td>
-                        <td className="px-[20px] py-[12px] text-[#6B6A64] text-[13px]">RM 21</td>
-                        <td className="px-[20px] py-[12px] text-[#2D7A4F] font-semibold text-[13px]">
-                          RM 28
-                        </td>
-                        <td className="px-[20px] py-[12px] text-[#6B6A64] text-[13px]">22 Apr</td>
                       </tr>
                     )}
                   </tbody>
