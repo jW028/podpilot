@@ -7,6 +7,7 @@ import {
   TOOL_DEFINITIONS,
 } from './tools';
 import { handleFinanceSignals } from '../orchestrator/signalHandler';
+import { processIncomingMessages } from './receiveHandler';
 
 // GLM uses the OpenAI SDK — just swap the base URL
 function getGlmClient(): OpenAI {
@@ -29,6 +30,13 @@ const supabase = createClient(
 // ─── Main agent entry point ────────────────────────────────────────────────────
 export async function runFinanceAgent({ businessId, days = 30, userMessage = null }: any) {
   const glm = getGlmClient();
+
+  // Step 0: Process any incoming messages from other agents
+  const incoming = await processIncomingMessages(businessId, supabase);
+  if (incoming.processed > 0) {
+    console.log(`[FinanceAgent] Processed ${incoming.processed} incoming messages: ${incoming.types.join(', ')}`);
+  }
+
   // 1. Load business context (get Printify token + shop ID from Supabase)
   const { data: business, error } = await supabase
     .from('businesses')
