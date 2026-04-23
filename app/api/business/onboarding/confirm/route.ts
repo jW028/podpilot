@@ -220,6 +220,31 @@ export async function POST(request: Request) {
       );
     }
 
+    // ── Finance agent event: business_created ──────────────────────────────────
+    // Non-blocking: a failure here should not interrupt the user's confirm flow.
+    const { error: financeEventError } = await serviceClient
+      .from("workflows")
+      .insert({
+        business_id: businessId,
+        type: "business_created",
+        source_agent: "business_prompting_agent",
+        target_agent: "finance_agent",
+        payload: {
+          business_id: businessId,
+          business_name: input.businessName || framework.theme,
+          niche: framework.niche,
+          target_margin_percent: 30, // Finance default; override if business specifies one
+        },
+        state: "pending",
+      });
+
+    if (financeEventError) {
+      console.error(
+        "[confirm/route] Failed to emit business_created event to finance_agent:",
+        financeEventError.message,
+      );
+    }
+
     return NextResponse.json({
       success: true,
       message: "Business direction confirmed.",

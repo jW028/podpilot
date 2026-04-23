@@ -10,7 +10,7 @@ const Header = () => {
   const { user, loading } = useAuth();
 
   return (
-    <div className="border-b bg-light border-neutral-300 pt-8 px-10 flex justify-between items-center">
+    <div className="border-b bg-light border-neutral-300 px-10 flex justify-between items-center">
       <Logo />
       <div className="flex justify-center items-center gap-4">
         {loading ? (

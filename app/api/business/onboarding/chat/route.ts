@@ -167,18 +167,24 @@ const runTavilyResearch = async (apiKey: string, queries: string[]) => {
 };
 
 const parseModelJson = (content: string): unknown => {
+  // Strip markdown code fences the model sometimes wraps JSON in
+  const stripped = content
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/, "")
+    .trim();
+
   try {
-    return JSON.parse(content);
+    return JSON.parse(stripped);
   } catch {
-    const start = content.indexOf("{");
-    const end = content.lastIndexOf("}");
+    const start = stripped.indexOf("{");
+    const end = stripped.lastIndexOf("}");
 
     if (start === -1 || end === -1 || end <= start) {
       return null;
     }
 
     try {
-      return JSON.parse(content.slice(start, end + 1));
+      return JSON.parse(stripped.slice(start, end + 1));
     } catch {
       return null;
     }
@@ -286,12 +292,16 @@ ${externalResearchContext}`;
         body: JSON.stringify({
           model,
           temperature: 0.35,
+          response_format: { type: "json_object" },
           messages: messagesForModel,
         }),
       },
     );
 
     if (!response.ok) {
+      console.warn(
+        `[chat/route] GLM returned non-ok status: ${response.status} ${response.statusText}`,
+      );
       return NextResponse.json(
         {
           success: true,

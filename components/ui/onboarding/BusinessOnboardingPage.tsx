@@ -1,9 +1,10 @@
 "use client";
 
 import Button from "@/components/ui/shared/Button";
+import MarkdownText from "@/components/ui/shared/MarkdownText";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 interface BusinessOnboardingPageProps {
   businessId: string;
@@ -73,7 +74,7 @@ const styles = {
   userAvatar: "bg-primary-500 text-light",
   bubble: "rounded-xl px-4 py-3 text-sm leading-relaxed",
   aiBubble: "bg-neutral-100 text-dark max-w-[85%]",
-  userBubble: "bg-dark text-light max-w-[80%] ml-auto",
+  userBubble: "bg-dark text-light max-w-[80%] ml-auto whitespace-pre-wrap",
   frameworkCard: "bg-white border border-primary-300 rounded-xl p-4",
   frameworkTitle: "text-xs uppercase tracking-wide text-primary-700 font-semibold",
   chatFooter: "p-4 border-t border-neutral-300 bg-white",
@@ -103,6 +104,13 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom whenever messages update or thinking state changes
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isThinking]);
 
   const simplifiedMessages = useMemo(
     () => messages.map(({ role, content }) => ({ role, content })),
@@ -288,7 +296,11 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
                   message.role === "assistant" ? styles.aiBubble : styles.userBubble
                 }`}
               >
-                {message.content}
+                {message.role === "assistant" ? (
+                  <MarkdownText content={message.content} />
+                ) : (
+                  message.content
+                )}
               </div>
               {message.role === "user" && (
                 <div className={`${styles.avatar} ${styles.userAvatar}`}>You</div>
@@ -345,15 +357,26 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
               Finalizing business profile and strategy...
             </div>
           )}
+
+          {/* Scroll anchor */}
+          <div ref={bottomRef} />
         </div>
 
         <div className={styles.chatFooter}>
           <div className="flex gap-3 items-end">
             <textarea
               className={styles.textarea}
-              placeholder="Reply to Genesis Agent..."
+              placeholder="Reply to Genesis Agent... (Enter to send, Shift+Enter for new line)"
               value={draftMessage}
               onChange={(event) => setDraftMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (!isThinking && draftMessage.trim()) {
+                    void handleSendMessage();
+                  }
+                }
+              }}
             />
             <Button
               variant="primary"
