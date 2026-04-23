@@ -17,7 +17,8 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<unknown>;
   signIn: (email: string, password: string) => Promise<unknown>;
   signOut: () => Promise<void>;
-  signInWithOAuth: (provider: "github" | "google") => Promise<unknown>;
+  signInWithOAuth: (provider: "google" | "apple") => Promise<unknown>;
+  connectWithPrintify: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(
@@ -61,13 +62,43 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await supabase.auth.signOut();
   };
 
-  const signInWithOAuth = async (provider: "github" | "google") => {
-    return await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+  const signInWithOAuth = async (provider: "google" | "apple") => {
+    if (typeof window === "undefined") {
+      throw new Error("OAuth sign-in can only be used in the browser");
+    }
+
+    try {
+      const result = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/oauth/callback`,
+          skipBrowserRedirect: false,
+        },
+      });
+
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      return result;
+    } catch (error) {
+      console.error(`OAuth sign-in error (${provider}):`, error);
+      throw error;
+    }
+  };
+
+  const connectWithPrintify = async () => {
+    if (typeof window === "undefined") {
+      throw new Error("Printify connection can only be used in the browser");
+    }
+
+    try {
+      // Redirect to custom Printify OAuth endpoint
+      window.location.href = `${window.location.origin}/auth/printify`;
+    } catch (error) {
+      console.error("Printify connection error:", error);
+      throw error;
+    }
   };
 
   return (
@@ -80,6 +111,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         signIn,
         signOut,
         signInWithOAuth,
+        connectWithPrintify,
       }}
     >
       {children}

@@ -1,7 +1,10 @@
-import React from "react";
+import DashboardPage from "@/components/dashboard/DashboardPage";
+// import React, { useEffect } from "react";
+
+// useEffect(() => {});
 
 const Dashboard = () => {
-  return <div>Dashboard</div>;
+  return <DashboardPage />;
 };
 
 export default Dashboard;
