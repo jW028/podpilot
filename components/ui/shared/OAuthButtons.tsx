@@ -81,7 +81,7 @@ const OAuthButtons = ({
         type="button"
         onClick={() => handleOAuthClick("google")}
         disabled={disabled || loadingProvider !== null}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-neutral-300 rounded-lg text-xs font-medium text-light-primary hover:bg-neutral-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-neutral-300 rounded-lg text-xs font-medium text-light-primary hover:bg-light-secondary transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <RiGoogleFill className="h-4 w-4" />
         {loadingProvider === "google"
@@ -94,7 +94,7 @@ const OAuthButtons = ({
         type="button"
         onClick={() => handleOAuthClick("apple")}
         disabled={disabled || loadingProvider !== null}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-neutral-300 rounded-lg text-xs font-medium text-light-primary hover:bg-neutral-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-neutral-300 rounded-lg text-xs font-medium text-light-primary hover:bg-light-secondary transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <FaApple className="h-4 w-4" />
         {loadingProvider === "apple" ? "Signing in..." : "Continue with Apple"}
