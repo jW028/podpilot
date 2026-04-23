@@ -26,11 +26,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     // Variant styles
     const variantStyles = {
-      primary: "bg-dark text-light hover:bg-neutral-900 active:bg-neutral-900",
+      primary: "bg-dark text-light hover:bg-neutral-700 active:bg-neutral-900",
       secondary:
         "bg-primary-500 text-light hover:bg-primary-600 active:bg-primary-700",
       outline:
-        "border border-neutral-300 text-neutral-500 hover:bg-light hover:text-light-primary active:bg-neutral-100 active:text-light-primary",
+        "border border-neutral-300 text-neutral-500 hover:bg-light hover:text-light-primary active:bg-neutral-100 hover:bg-neutral-300 active:text-light-primary",
     };
 
     // Size styles
