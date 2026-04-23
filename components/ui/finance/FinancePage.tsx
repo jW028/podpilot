@@ -3,8 +3,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useFinanceAgent } from "@/hooks/useFinanceAgent";
 
-// ── Sub-components ──────────────────────────────────────────────────────────
-
 interface MetricCardProps {
   label: string;
   value: string;
@@ -13,13 +11,23 @@ interface MetricCardProps {
   sub?: string;
 }
 
-const MetricCard = ({ label, value, delta, highlight, sub }: MetricCardProps) => (
+const MetricCard = ({
+  label,
+  value,
+  delta,
+  highlight,
+  sub,
+}: MetricCardProps) => (
   <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-[12px] p-[16px_18px]">
     <div className="text-[11px] text-[#6B6A64] uppercase tracking-[0.06em] mb-[6px]">
       {label}
     </div>
-    <div className="font-serif text-[26px] text-[#141412] leading-[1.1]">{value}</div>
-    <div className={`text-[11px] mt-[4px] ${highlight ? "text-[#C0584A]" : "text-[#4A8C5C]"}`}>
+    <div className="font-serif text-[26px] text-[#141412] leading-[1.1]">
+      {value}
+    </div>
+    <div
+      className={`text-[11px] mt-[4px] ${highlight ? "text-[#C0584A]" : "text-[#4A8C5C]"}`}
+    >
       {delta}
     </div>
     {sub && <div className="hidden">{sub}</div>}
@@ -32,7 +40,7 @@ interface SignalBadgeProps {
 
 const SignalBadge = ({ action }: SignalBadgeProps) => {
   if (action === "REPRICE") return <span>🟡</span>;
-  if (action === "RETIRE")  return <span>🔴</span>;
+  if (action === "RETIRE") return <span>🔴</span>;
   return <span>🟢</span>;
 };
 
@@ -72,7 +80,7 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
 
   const summary = data?.metrics?.summary;
   const products = data?.metrics?.by_product ?? [];
-  const signals  = data?.signals ?? [];
+  const signals = data?.signals ?? [];
 
   const handleSend = () => {
     if (!chatInput.trim() || loading) return;
@@ -103,7 +111,6 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
 
       {/* ── CONTENT ────────────────────────────────────────────────────── */}
       <div className="p-[24px_28px] max-w-6xl w-full">
-
         {/* Error banner */}
         {error && (
           <div className="bg-[#C0584A]/10 border border-[#C0584A]/20 text-[#C0584A] rounded-[12px] px-[20px] py-[16px] text-[14px] font-medium mb-[20px]">
@@ -126,7 +133,9 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
             <div className="grid grid-cols-4 gap-[12px] mb-[20px]">
               <MetricCard
                 label="REVENUE (APR)"
-                value={summary?.total_revenue ? `RM ${summary.total_revenue}` : "—"}
+                value={
+                  summary?.total_revenue ? `RM ${summary.total_revenue}` : "—"
+                }
                 delta="↑ 23% vs March"
               />
               <MetricCard
@@ -137,52 +146,66 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
               />
               <MetricCard
                 label="NET PROFIT"
-                value={summary?.total_profit ? `RM ${summary.total_profit}` : "—"}
+                value={
+                  summary?.total_profit ? `RM ${summary.total_profit}` : "—"
+                }
                 delta="↑ 31% vs March"
               />
               <MetricCard
                 label="MARGIN"
-                value={summary?.overall_margin_pct ? `${summary.overall_margin_pct}%` : "—"}
+                value={
+                  summary?.overall_margin_pct
+                    ? `${summary.overall_margin_pct}%`
+                    : "—"
+                }
                 delta="↑ 4.2pts"
               />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px]">
-
               {/* ── LEFT: CHART + SIGNALS ─────────────────────────────── */}
               <div className="flex flex-col gap-[16px]">
-
                 {/* Revenue chart */}
                 <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-[12px] p-[20px] h-[190px] flex flex-col">
                   <div className="font-serif text-[16px] text-[#141412] mb-[12px]">
                     Monthly Revenue
                   </div>
                   <div className="flex items-end gap-[4px] flex-1 mt-[10px]">
-                    {[45, 55, 48, 62, 58, 70, parseFloat(summary?.overall_margin_pct) || 82].map(
-                      (h, i) => (
-                        <div
-                          key={i}
-                          className={`flex-1 rounded-[4px_4px_0_0] transition-opacity delay-75 ${
-                            i === 6
-                              ? "bg-gradient-to-t from-[#141412] to-[#2A2A27]"
-                              : "bg-gradient-to-t from-[#9E7A2E] to-[#C9A84C] opacity-60"
-                          }`}
-                          style={{ height: `${h}%` }}
-                        />
-                      )
-                    )}
+                    {[
+                      45,
+                      55,
+                      48,
+                      62,
+                      58,
+                      70,
+                      parseFloat(summary?.overall_margin_pct) || 82,
+                    ].map((h, i) => (
+                      <div
+                        key={i}
+                        className={`flex-1 rounded-[4px_4px_0_0] transition-opacity delay-75 ${
+                          i === 6
+                            ? "bg-gradient-to-t from-[#141412] to-[#2A2A27]"
+                            : "bg-gradient-to-t from-[#9E7A2E] to-[#C9A84C] opacity-60"
+                        }`}
+                        style={{ height: `${h}%` }}
+                      />
+                    ))}
                   </div>
                   <div className="flex gap-[4px] mt-[12px]">
-                    {["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"].map((m, i) => (
-                      <div
-                        key={m}
-                        className={`flex-1 text-center text-[10px] ${
-                          i === 6 ? "font-semibold text-[#141412]" : "text-[#6B6A64]"
-                        }`}
-                      >
-                        {m}
-                      </div>
-                    ))}
+                    {["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"].map(
+                      (m, i) => (
+                        <div
+                          key={m}
+                          className={`flex-1 text-center text-[10px] ${
+                            i === 6
+                              ? "font-semibold text-[#141412]"
+                              : "text-[#6B6A64]"
+                          }`}
+                        >
+                          {m}
+                        </div>
+                      ),
+                    )}
                   </div>
                 </div>
 
@@ -207,13 +230,16 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
                           <div>
                             <div className="text-[12px] font-semibold text-[#141412]">
                               {sig.action}
-                              <span className="font-medium text-[#6B6A64] mx-[4px]">•</span>
+                              <span className="font-medium text-[#6B6A64] mx-[4px]">
+                                •
+                              </span>
                               <span className="font-medium text-[#141412]">
                                 {sig.product_name ?? "Product"}
                               </span>
                             </div>
                             <div className="text-[11px] text-[#6B6A64] mt-[4px] leading-snug">
-                              {sig.reason ?? "Margin threshold triggered based on recent sales."}
+                              {sig.reason ??
+                                "Margin threshold triggered based on recent sales."}
                             </div>
                           </div>
                         </div>
@@ -230,9 +256,13 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
               {/* ── RIGHT: FINANCE AGENT CHAT ─────────────────────────── */}
               <div className="bg-[#2A2A27] text-[#FAFAF8] rounded-[12px] p-[20px] flex flex-col h-[366px] shadow-[0_4px_20px_rgba(20,20,18,0.15)]">
                 <div className="flex items-center gap-[10px] pb-[16px] shrink-0">
-                  <span className="text-[#FAFAF8] text-[18px] opacity-70">◈</span>
+                  <span className="text-[#FAFAF8] text-[18px] opacity-70">
+                    ◈
+                  </span>
                   <div>
-                    <div className="text-[13px] font-semibold mt-[-2px]">Finance Agent</div>
+                    <div className="text-[13px] font-semibold mt-[-2px]">
+                      Finance Agent
+                    </div>
                     <div className="text-[10px] text-[#FAFAF8]/50 mt-[1px]">
                       April 2026 insights &amp; dialogue
                     </div>
@@ -285,8 +315,14 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
                       </div>
                       <div className="p-[12px_16px] bg-[#FAFAF8] rounded-[2px_10px_10px_10px] flex items-center gap-[4px] h-[40px]">
                         <div className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce" />
-                        <div className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <div className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                        <div
+                          className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce"
+                          style={{ animationDelay: "150ms" }}
+                        />
+                        <div
+                          className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce"
+                          style={{ animationDelay: "300ms" }}
+                        />
                       </div>
                     </div>
                   )}
@@ -308,7 +344,9 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
                       disabled={loading}
                       className="w-[28px] h-[28px] bg-[#FAFAF8]/10 hover:bg-[#C9A84C] disabled:bg-[#FAFAF8]/5 disabled:cursor-not-allowed rounded-[6px] border-none flex items-center justify-center cursor-pointer transition"
                     >
-                      <span className="text-[16px] leading-none mb-[2px] text-[#FAFAF8]">↑</span>
+                      <span className="text-[16px] leading-none mb-[2px] text-[#FAFAF8]">
+                        ↑
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -324,16 +362,22 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
                 <table className="w-full">
                   <thead>
                     <tr>
-                      {["Order", "Product", "Platform", "Revenue", "Cost", "Profit", "Date"].map(
-                        (h) => (
-                          <th
-                            key={h}
-                            className="text-left px-[20px] py-[12px] text-[10px] font-semibold text-[#6B6A64] uppercase tracking-[0.06em] border-b border-[#E8E7E2]"
-                          >
-                            {h}
-                          </th>
-                        )
-                      )}
+                      {[
+                        "Order",
+                        "Product",
+                        "Platform",
+                        "Revenue",
+                        "Cost",
+                        "Profit",
+                        "Date",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="text-left px-[20px] py-[12px] text-[10px] font-semibold text-[#6B6A64] uppercase tracking-[0.06em] border-b border-[#E8E7E2]"
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -372,7 +416,10 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={7} className="px-[20px] py-[16px] text-[13px] text-[#6B6A64] text-center">
+                        <td
+                          colSpan={7}
+                          className="px-[20px] py-[16px] text-[13px] text-[#6B6A64] text-center"
+                        >
                           No order data available yet.
                         </td>
                       </tr>
