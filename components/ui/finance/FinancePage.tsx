@@ -141,32 +141,34 @@ function RevenueChart({ chartData }: { chartData: ChartPoint[] }) {
     );
   }
 
+  const CHART_HEIGHT = 110; // px
   const maxRevenue = Math.max(...chartData.map((d) => d.revenue), 1);
 
   return (
     <>
-      <div className="flex items-end gap-[4px] h-[120px] mt-[10px]">
+      <div className="flex items-end gap-[4px] mt-[10px]" style={{ height: `${CHART_HEIGHT}px` }}>
         {chartData.map((point, i) => {
-          const heightPct = Math.max((point.revenue / maxRevenue) * 100, 4);
+          const barHeightPx = Math.max((point.revenue / maxRevenue) * CHART_HEIGHT, 4);
           return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-[4px] group relative">
+            <div key={i} className="flex-1 relative group" style={{ height: `${CHART_HEIGHT}px` }}>
               {/* Tooltip */}
-              <div className="absolute bottom-full mb-1 hidden group-hover:flex bg-[#141412] text-[#FAFAF8] text-[10px] px-[6px] py-[3px] rounded-[4px] whitespace-nowrap z-10">
+              <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:flex bg-[#141412] text-[#FAFAF8] text-[10px] px-[6px] py-[3px] rounded-[4px] whitespace-nowrap z-10">
                 {rm(point.revenue)}
               </div>
+              {/* Bar — absolutely positioned from bottom */}
               <div
-                className={`w-full rounded-[4px_4px_0_0] transition-all ${
+                className={`absolute bottom-0 left-0 right-0 rounded-[4px_4px_0_0] transition-all ${
                   point.isCurrent
                     ? "bg-gradient-to-t from-[#141412] to-[#2A2A27]"
                     : "bg-gradient-to-t from-[#9E7A2E] to-[#C9A84C] opacity-60 group-hover:opacity-80"
                 }`}
-                style={{ height: `${heightPct}%` }}
+                style={{ height: `${barHeightPx}px` }}
               />
             </div>
           );
         })}
       </div>
-      <div className="flex gap-[4px] mt-[12px]">
+      <div className="flex gap-[4px] mt-[8px]">
         {chartData.map((point, i) => (
           <div
             key={i}
@@ -191,6 +193,7 @@ export default function FinancePage({ businessId }: { businessId: string }) {
   const [days] = useState(30);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Run on mount
@@ -262,52 +265,30 @@ export default function FinancePage({ businessId }: { businessId: string }) {
   }, [products, businessId]);
 
   // ── Generate Report ─────────────────────────────────────────────────────
-  const handleGenerateReport = useCallback(() => {
-    if (!hasData || !summary) return;
-
-    const lines: string[] = [];
-    lines.push(`FINANCE REPORT — ${businessName}`);
-    lines.push(`Generated: ${new Date().toLocaleString("en-MY")}`);
-    lines.push(`Period: Last ${days} days`);
-    lines.push("");
-    lines.push("── SUMMARY ──────────────────────────");
-    lines.push(`Revenue:    ${rm(summary.total_revenue)}`);
-    lines.push(`Costs:      ${rm(summary.total_costs)}`);
-    lines.push(`Net Profit: ${rm(summary.total_profit)}`);
-    lines.push(`Margin:     ${pct(summary.overall_margin_pct)}`);
-    lines.push(`Orders:     ${summary.total_orders}`);
-    lines.push("");
-    lines.push("── PRODUCT PERFORMANCE ───────────────");
-    products.forEach((p) => {
-      lines.push(`${p.title}`);
-      lines.push(`  Units: ${p.units_sold} | Revenue: ${rm(p.revenue)} | Profit: ${rm(p.profit)} | Margin: ${pct(p.margin_pct)}`);
-    });
-    lines.push("");
-    lines.push("── AGENT SIGNALS ─────────────────────");
-    if (signals.length > 0) {
-      signals.forEach((s) => {
-        lines.push(`[${s.action.toUpperCase()}] ${s.product_name}`);
-        lines.push(`  ${s.reason}`);
+  const handleGenerateReport = useCallback(async () => {
+    if (!hasData || reportLoading) return;
+    setReportLoading(true);
+    try {
+      const res = await fetch('/api/agents/finance/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessId, days }),
       });
-    } else {
-      lines.push("No active signals.");
+      if (!res.ok) throw new Error('Report generation failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `finance-report-${businessId}-${new Date().toISOString().split('T')[0]}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('[FinancePage] Report generation error:', err.message);
+      alert('Report generation failed. Please try again.');
+    } finally {
+      setReportLoading(false);
     }
-    lines.push("");
-    if (messages.length > 0) {
-      lines.push("── FINANCE AGENT INSIGHTS ────────────");
-      const aiMessages = messages.filter((m) => m.role === "ai");
-      aiMessages.forEach((m) => lines.push(m.text));
-    }
-
-    const content = lines.join("\n");
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `finance-report-${businessId}-${new Date().toISOString().split("T")[0]}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [hasData, summary, products, signals, messages, businessName, days, businessId]);
+  }, [hasData, reportLoading, businessId, days]);
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
@@ -328,14 +309,21 @@ export default function FinancePage({ businessId }: { businessId: string }) {
             disabled={products.length === 0}
             className="px-[16px] py-[8px] rounded-[8px] border border-[#E8E7E2] bg-transparent text-[#6B6A64] hover:bg-[#F4F3EF] hover:text-[#141412] disabled:opacity-40 disabled:cursor-not-allowed text-[13px] font-medium transition cursor-pointer"
           >
-            Export CSV
+            Export Products CSV
           </button>
           <button
             onClick={handleGenerateReport}
-            disabled={!hasData}
+            disabled={!hasData || reportLoading}
             className="px-[16px] py-[8px] rounded-[8px] border-none bg-[#C9A84C] hover:bg-[#9E7A2E] disabled:opacity-40 disabled:cursor-not-allowed text-[#FAFAF8] text-[13px] font-medium transition cursor-pointer flex items-center gap-[6px]"
           >
-            ✦ Generate Report
+            {reportLoading ? (
+              <>
+                <div className="w-[12px] h-[12px] border-[2px] border-[#FAFAF8] border-t-transparent rounded-full animate-spin" />
+                Generating…
+              </>
+            ) : (
+              '✦ Generate Report'
+            )}
           </button>
         </div>
       </div>
