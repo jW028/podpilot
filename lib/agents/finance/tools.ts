@@ -1,4 +1,92 @@
-import axios from 'axios';
+// ─── Type Definitions ────────────────────────────────────────────────────────
+
+interface PrintifyLineItem {
+  product_id: string;
+  quantity: number;
+  cost?: number;
+  shipping_cost?: number;
+  metadata?: {
+    title?: string;
+    price?: number;
+  };
+}
+
+interface PrintifyOrder {
+  id: string;
+  created_at: string;
+  total_price: number;
+  line_items: PrintifyLineItem[];
+}
+
+interface PrintifyResponse {
+  data: PrintifyOrder[];
+  current_page: number;
+  last_page: number;
+}
+
+interface ProductMetric {
+  product_id: string;
+  title: string;
+  units_sold: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin_pct: string;
+}
+
+interface MetricsSummary {
+  total_orders: number;
+  total_revenue: string;
+  total_costs: string;
+  total_profit: string;
+  overall_margin_pct: string;
+}
+
+interface Metrics {
+  summary: MetricsSummary;
+  by_product: ProductMetric[];
+  note?: string;
+}
+
+interface Signal {
+  type: "product_signal";
+  action: "reprice" | "retire" | "boost";
+  product_id: string;
+  product_title: string;
+  reason: string;
+  priority: "CRITICAL" | "HIGH" | "MEDIUM";
+  suggested_price_multiplier?: number;
+}
+
+interface Alert {
+  type: "low_volume_loss" | "negative_profit";
+  severity?: "CRITICAL";
+  message: string;
+  product_id?: string;
+  product_title?: string;
+}
+
+interface ToolState {
+  orders?: PrintifyOrder[];
+  metrics?: Metrics;
+  signals?: Signal[];
+  alerts?: Alert[];
+}
+
+interface FetchPrintifyOrdersParams {
+  printifyToken: string;
+  shopId: string;
+  days?: number;
+  toolState?: ToolState;
+}
+
+interface CalculateProfitMetricsParams {
+  toolState?: ToolState;
+}
+
+interface DetectAnomaliesParams {
+  toolState?: ToolState;
+}
 
 // ─── Tool 1: Fetch Printify Orders ────────────────────────────────────────────
 // Fetches all fulfilled orders within a date range from Printify API.
@@ -8,49 +96,80 @@ import axios from 'axios';
 // FIX #1 (partial): This function now returns a SLIM summary to GLM, not the raw orders.
 // The full orders array is stored in `toolState` (see financeAgent.js) for server-side use only.
 
-export async function fetchPrintifyOrders({ printifyToken, shopId, days = 30, toolState }: any) {
-  const orders = [];
+export async function fetchPrintifyOrders({
+  printifyToken,
+  shopId,
+  days = 30,
+  toolState,
+}: FetchPrintifyOrdersParams): Promise<{
+  status: string;
+  order_count: number;
+  period_days: number;
+  message: string;
+}> {
+  const orders: PrintifyOrder[] = [];
   let page = 1;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
 
   while (true) {
-    let response;
+    let response: Response;
     try {
-      response = await axios.get(
+      const url = new URL(
         `https://api.printify.com/v1/shops/${shopId}/orders.json`,
-        {
+      );
+      url.searchParams.append("limit", "10");
+      url.searchParams.append("page", String(page));
+      url.searchParams.append("status", "fulfilled");
+
+      response = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${printifyToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.status === 429) {
+        throw { status: 429 };
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+    } catch (err: unknown) {
+      // Handle 429 rate limit — wait 1s and retry once
+      const error = err as { status?: number };
+      if (error.status === 429) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const url = new URL(
+          `https://api.printify.com/v1/shops/${shopId}/orders.json`,
+        );
+        url.searchParams.append("limit", "10");
+        url.searchParams.append("page", String(page));
+        url.searchParams.append("status", "fulfilled");
+
+        response = await fetch(url.toString(), {
+          method: "GET",
           headers: {
             Authorization: `Bearer ${printifyToken}`,
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
-          params: {
-            limit: 10,     // Printify max per page
-            page,
-            status: 'fulfilled',
-          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-      );
-    } catch (err: any) {
-      // Handle 429 rate limit — wait 1s and retry once
-      if (err.response?.status === 429) {
-        await new Promise(r => setTimeout(r, 1000));
-        response = await axios.get(
-          `https://api.printify.com/v1/shops/${shopId}/orders.json`,
-          {
-            headers: { Authorization: `Bearer ${printifyToken}` },
-            params: { limit: 10, page, status: 'fulfilled' },
-          }
-        );
       } else {
         throw err;
       }
     }
 
-    const { data, current_page, last_page } = response.data;
+    const data: PrintifyResponse = await response.json();
+    const { data: pageOrders, current_page, last_page } = data;
 
     // Filter to the requested date range
-    const filtered = data.filter((order: any) => {
+    const filtered = pageOrders.filter((order: PrintifyOrder) => {
       const created = new Date(order.created_at);
       return created >= cutoff;
     });
@@ -58,11 +177,11 @@ export async function fetchPrintifyOrders({ printifyToken, shopId, days = 30, to
     orders.push(...filtered);
 
     // Stop if we've gone past our date window or reached last page
-    if (current_page >= last_page || filtered.length < data.length) break;
+    if (current_page >= last_page || filtered.length < pageOrders.length) break;
     page++;
 
     // FIX #4: Rate-limit protection — 200ms between pages
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 200));
   }
 
   // FIX #1: Store full orders in toolState (server memory), NOT in GLM context
@@ -70,12 +189,13 @@ export async function fetchPrintifyOrders({ printifyToken, shopId, days = 30, to
 
   // Return only a slim summary to GLM — never the raw array
   return {
-    status: 'ready',
+    status: "ready",
     order_count: orders.length,
     period_days: days,
-    message: orders.length === 0
-      ? 'No fulfilled orders found in this period. calculateProfitMetrics will return empty results.'
-      : `Fetched ${orders.length} fulfilled orders. Call calculateProfitMetrics next (no arguments needed).`,
+    message:
+      orders.length === 0
+        ? "No fulfilled orders found in this period. calculateProfitMetrics will return empty results."
+        : `Fetched ${orders.length} fulfilled orders. Call calculateProfitMetrics next (no arguments needed).`,
   };
 }
 
@@ -84,27 +204,29 @@ export async function fetchPrintifyOrders({ printifyToken, shopId, days = 30, to
 // GLM calls this with NO arguments — the server fills in the data from toolState.
 // This prevents hundreds of order objects from being serialized into GLM's context.
 
-export function calculateProfitMetrics({ toolState }: any) {
+export function calculateProfitMetrics({
+  toolState,
+}: CalculateProfitMetricsParams): Metrics {
   // Read from server-side memory, not from GLM-passed args
   const orders = toolState?.orders || [];
 
   if (orders.length === 0) {
-    const emptyMetrics = {
+    const emptyMetrics: Metrics = {
       summary: {
         total_orders: 0,
-        total_revenue: '0.00',
-        total_costs: '0.00',
-        total_profit: '0.00',
-        overall_margin_pct: '0.0',
+        total_revenue: "0.00",
+        total_costs: "0.00",
+        total_profit: "0.00",
+        overall_margin_pct: "0.0",
       },
       by_product: [],
-      note: 'No orders in this period — metrics are empty.',
+      note: "No orders in this period — metrics are empty.",
     };
     if (toolState) toolState.metrics = emptyMetrics;
     return emptyMetrics;
   }
 
-  const byProduct: Record<string, any> = {};
+  const byProduct: Record<string, ProductMetric> = {};
   let totalRevenue = 0;
   let totalCosts = 0;
 
@@ -112,14 +234,14 @@ export function calculateProfitMetrics({ toolState }: any) {
     // order.total_price = what customer paid (cents)
     // line_item.cost + line_item.shipping_cost = what Printify charged us
 
-    const orderRevenue = order.total_price / 100;          // convert cents → dollars/MYR
+    const orderRevenue = order.total_price / 100; // convert cents → dollars/MYR
     let orderCost = 0;
 
     for (const item of order.line_items) {
       const itemCost = ((item.cost || 0) + (item.shipping_cost || 0)) / 100;
       const itemRevenue = (item.metadata?.price || 0) / 100;
       const productId = item.product_id;
-      const productTitle = item.metadata?.title || 'Unknown Product';
+      const productTitle = item.metadata?.title || "Unknown Product";
 
       orderCost += itemCost;
 
@@ -131,7 +253,7 @@ export function calculateProfitMetrics({ toolState }: any) {
           revenue: 0,
           cost: 0,
           profit: 0,
-          margin_pct: 0,
+          margin_pct: "0",
         };
       }
 
@@ -145,18 +267,20 @@ export function calculateProfitMetrics({ toolState }: any) {
   }
 
   // Finalise per-product margins
-  const productList = Object.values(byProduct).map(p => {
-    p.profit = p.revenue - p.cost;
-    p.margin_pct = p.revenue > 0 ? ((p.profit / p.revenue) * 100).toFixed(1) : '0.0';
-    return p;
-  }).sort((a, b) => b.profit - a.profit);  // sort best → worst
+  const productList: ProductMetric[] = Object.values(byProduct)
+    .map((p) => {
+      p.profit = p.revenue - p.cost;
+      p.margin_pct =
+        p.revenue > 0 ? ((p.profit / p.revenue) * 100).toFixed(1) : "0.0";
+      return p;
+    })
+    .sort((a, b) => b.profit - a.profit); // sort best → worst
 
   const totalProfit = totalRevenue - totalCosts;
-  const overallMargin = totalRevenue > 0
-    ? ((totalProfit / totalRevenue) * 100).toFixed(1)
-    : '0.0';
+  const overallMargin =
+    totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : "0.0";
 
-  const metrics = {
+  const metrics: Metrics = {
     summary: {
       total_orders: orders.length,
       total_revenue: totalRevenue.toFixed(2),
@@ -180,22 +304,31 @@ export function calculateProfitMetrics({ toolState }: any) {
 //
 // THRESHOLD TABLE (adjust to match your test data):
 //   reprice  : margin < 30%  (was 10% — too tight for demo)
-//   retire   : margin < 15%  (was 5%)  
+//   retire   : margin < 15%  (was 5%)
 //   boost    : margin > 35% AND units >= 1  (was 40%, units > 10 — too strict)
 
-export function detectAnomalies({ toolState }: any) {
+export function detectAnomalies({ toolState }: DetectAnomaliesParams): {
+  signals: Signal[];
+  alerts: Alert[];
+  error?: string;
+} {
   // FIX #1: Read from server memory
   const metrics = toolState?.metrics;
-  if (!metrics) return { signals: [], alerts: [], error: 'metrics not computed yet — call calculateProfitMetrics first' };
+  if (!metrics)
+    return {
+      signals: [],
+      alerts: [],
+      error: "metrics not computed yet — call calculateProfitMetrics first",
+    };
 
-  const signals = [];
-  const alerts = [];
+  const signals: Signal[] = [];
+  const alerts: Alert[] = [];
 
   // FIX #3: Demo-friendly thresholds (environment-switchable)
-  const DEMO_MODE = process.env.DEMO_MODE === 'true';
+  const DEMO_MODE = process.env.DEMO_MODE === "true";
   const THRESHOLDS = DEMO_MODE
     ? { reprice: 30, retire: 15, boost_margin: 35, boost_units: 1 }
-    : { reprice: 10, retire: 5,  boost_margin: 40, boost_units: 10 };
+    : { reprice: 10, retire: 5, boost_margin: 40, boost_units: 10 };
 
   for (const product of metrics.by_product) {
     const margin = parseFloat(product.margin_pct);
@@ -203,37 +336,40 @@ export function detectAnomalies({ toolState }: any) {
     // Rule: margin below reprice threshold
     if (margin > 0 && margin < THRESHOLDS.reprice) {
       signals.push({
-        type: 'product_signal',
-        action: 'reprice',
+        type: "product_signal",
+        action: "reprice",
         product_id: product.product_id,
         product_title: product.title,
         reason: `Margin is ${margin}% — below ${THRESHOLDS.reprice}% threshold`,
         suggested_price_multiplier: 1.35,
-        priority: margin < THRESHOLDS.retire ? 'CRITICAL' : 'HIGH',
+        priority: margin < THRESHOLDS.retire ? "CRITICAL" : "HIGH",
       });
     }
 
     // Rule: margin below retire threshold (also gets a reprice signal above)
     if (margin > 0 && margin < THRESHOLDS.retire) {
       signals.push({
-        type: 'product_signal',
-        action: 'retire',
+        type: "product_signal",
+        action: "retire",
         product_id: product.product_id,
         product_title: product.title,
         reason: `Margin is ${margin}% — critically low`,
-        priority: 'HIGH',
+        priority: "HIGH",
       });
     }
 
     // Rule: high-margin product → boost
-    if (margin >= THRESHOLDS.boost_margin && product.units_sold >= THRESHOLDS.boost_units) {
+    if (
+      margin >= THRESHOLDS.boost_margin &&
+      product.units_sold >= THRESHOLDS.boost_units
+    ) {
       signals.push({
-        type: 'product_signal',
-        action: 'boost',
+        type: "product_signal",
+        action: "boost",
         product_id: product.product_id,
         product_title: product.title,
         reason: `High-margin (${margin}%) with ${product.units_sold} units sold`,
-        priority: 'MEDIUM',
+        priority: "MEDIUM",
       });
     }
 
@@ -246,7 +382,7 @@ export function detectAnomalies({ toolState }: any) {
     // can sustain themselves, and they're already losing money.
     if (product.units_sold === 1 && product.profit <= 0) {
       alerts.push({
-        type: 'low_volume_loss',
+        type: "low_volume_loss",
         product_id: product.product_id,
         product_title: product.title,
         message: `Only 1 unit sold and already unprofitable (RM ${product.profit.toFixed(2)}). Consider repricing or retiring before promoting.`,
@@ -258,8 +394,8 @@ export function detectAnomalies({ toolState }: any) {
   const totalProfit = parseFloat(metrics.summary.total_profit);
   if (totalProfit < 0) {
     alerts.push({
-      type: 'negative_profit',
-      severity: 'CRITICAL',
+      type: "negative_profit",
+      severity: "CRITICAL",
       message: `Store is operating at a loss: ${metrics.summary.total_profit}`,
     });
   }
@@ -279,49 +415,53 @@ export function detectAnomalies({ toolState }: any) {
 // GLM is told this explicitly in the description so it doesn't try to pass args.
 export const TOOL_DEFINITIONS = [
   {
-    type: 'function',
+    type: "function",
     function: {
-      name: 'fetchPrintifyOrders',
-      description: 'Fetches fulfilled orders from Printify for the configured time period. Call this FIRST. Returns a count summary only — full data is handled server-side.',
+      name: "fetchPrintifyOrders",
+      description:
+        "Fetches fulfilled orders from Printify for the configured time period. Call this FIRST. Returns a count summary only — full data is handled server-side.",
       strict: true,
       parameters: {
-        type: 'object',
+        type: "object",
         properties: {
           days: {
-            type: 'number',
-            description: 'Number of past days to fetch. Default is already configured — only pass this if user explicitly asked for a different period.',
+            type: "number",
+            description:
+              "Number of past days to fetch. Default is already configured — only pass this if user explicitly asked for a different period.",
           },
         },
         required: [],
-        additionalProperties: false
+        additionalProperties: false,
       },
     },
   },
   {
-    type: 'function',
+    type: "function",
     function: {
-      name: 'calculateProfitMetrics',
-      description: 'Computes P&L, margin, and per-product breakdown. Call after fetchPrintifyOrders. Takes NO arguments — data is pre-loaded server-side.',
+      name: "calculateProfitMetrics",
+      description:
+        "Computes P&L, margin, and per-product breakdown. Call after fetchPrintifyOrders. Takes NO arguments — data is pre-loaded server-side.",
       strict: true,
       parameters: {
-        type: 'object',
+        type: "object",
         properties: {},
         required: [],
-        additionalProperties: false
+        additionalProperties: false,
       },
     },
   },
   {
-    type: 'function',
+    type: "function",
     function: {
-      name: 'detectAnomalies',
-      description: 'Runs rule-based analysis and generates signals for other agents. Call after calculateProfitMetrics. Takes NO arguments — uses pre-computed metrics server-side.',
+      name: "detectAnomalies",
+      description:
+        "Runs rule-based analysis and generates signals for other agents. Call after calculateProfitMetrics. Takes NO arguments — uses pre-computed metrics server-side.",
       strict: true,
       parameters: {
-        type: 'object',
+        type: "object",
         properties: {},
         required: [],
-        additionalProperties: false
+        additionalProperties: false,
       },
     },
   },
