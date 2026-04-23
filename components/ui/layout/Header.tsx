@@ -12,9 +12,11 @@ const Header = () => {
   const { user, loading } = useAuth();
 
   return (
-    <div className="border-b bg-light border-neutral-300 pt-8 px-10 flex justify-between items-center">
-      <Logo />
-      <div className="flex justify-center items-center gap-4">
+    <div className="flex justify-between items-center px-6 py-4 border-b border-neutral-300 bg-light">
+      <div className="flex justify-center items-center">
+        <Logo />
+      </div>
+      <div className="flex justify-center items-center">
         {loading ? (
           <div className="w-10 h-10 bg-neutral-200 rounded-full animate-pulse" />
         ) : user ? (

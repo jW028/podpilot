@@ -78,10 +78,10 @@ interface NavItem {
 }
 
 const BUSINESS_NAV: NavItem[] = [
-  { label: "Overview",              href: "overview",   icon: <IconOverview />,  businessScoped: true },
-  { label: "AI Command Center",     href: "onboarding", icon: <IconCommand />,   businessScoped: true, ai: true },
-  { label: "Products",              href: "products",   icon: <IconProducts />,  businessScoped: true, ai: true },
-  { label: "Launch & Integrations", href: "launch",     icon: <IconLaunch />,    businessScoped: true, ai: true },
+  { label: "AI Command Center",              href: "overview",   icon: <IconOverview />,  businessScoped: true },
+  { label: "Business",     href: "onboarding", icon: <IconCommand />,   businessScoped: true, ai: true },
+  { label: "Design",              href: "products",   icon: <IconProducts />,  businessScoped: true, ai: true },
+  { label: "Launch", href: "launch",     icon: <IconLaunch />,    businessScoped: true, ai: true },
   { label: "Customer Support",      href: "support",    icon: <IconSupport />,   businessScoped: true, badge: 8 },
   { label: "Finance",               href: "finance",    icon: <IconFinance />,   businessScoped: true, ai: true },
 ];
@@ -200,31 +200,6 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
         </div>
       </nav>
 
-      {/* User footer */}
-      <div className="p-3 border-t border-[#E8E7E2]">
-        <div className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer hover:bg-[#EEEDEA] transition group">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-[#2A2A27] flex items-center justify-center text-[11px] font-semibold text-white shrink-0">
-              {initials}
-            </div>
-            <div className="min-w-0">
-              <div className="text-[13px] font-semibold text-[#141412] truncate max-w-[120px] leading-tight">
-                {displayName}
-              </div>
-              <div className="text-[11px] text-[#9E9D97] truncate max-w-[120px] leading-tight">
-                {user?.email}
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => signOut?.()}
-            className="text-[11px] text-[#9E9D97] hover:text-[#C0584A] transition opacity-0 group-hover:opacity-100 shrink-0"
-            title="Sign out"
-          >
-            ↩
-          </button>
-        </div>
-      </div>
     </aside>
   );
 };
