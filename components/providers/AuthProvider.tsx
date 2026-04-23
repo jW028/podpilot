@@ -18,6 +18,9 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<unknown>;
   signOut: () => Promise<void>;
   signInWithOAuth: (provider: "google" | "apple") => Promise<unknown>;
+  signInWithMagicLink: (email: string) => Promise<unknown>;
+  signInWithOTP: (email: string) => Promise<unknown>;
+  verifyOTP: (email: string, token: string) => Promise<unknown>;
   connectWithPrintify: () => Promise<void>;
 }
 
@@ -87,6 +90,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const signInWithMagicLink = async (email: string) => {
+    return await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/auth/email/callback`,
+      },
+    });
+  };
+
+  const signInWithOTP = async (email: string) => {
+    // Send OTP for verification
+    return await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/auth/email/callback`,
+      },
+    });
+  };
+
+  const verifyOTP = async (email: string, token: string) => {
+    return await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: "email",
+    });
+  };
+
   const connectWithPrintify = async () => {
     if (typeof window === "undefined") {
       throw new Error("Printify connection can only be used in the browser");
@@ -111,6 +141,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         signIn,
         signOut,
         signInWithOAuth,
+        signInWithMagicLink,
+        signInWithOTP,
+        verifyOTP,
         connectWithPrintify,
       }}
     >
