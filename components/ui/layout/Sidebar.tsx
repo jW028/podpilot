@@ -70,7 +70,7 @@ interface NavItem {
 
 const BUSINESS_NAV: NavItem[] = [
   {
-    label: "Workflow",
+    label: "Command Centre",
     href: "workflow",
     icon: <GoWorkflow />,
     businessScoped: true,
