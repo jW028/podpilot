@@ -18,7 +18,8 @@ const registerStyles = {
   input:
     "w-full px-4 py-2 text-sm border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-light-primary",
   checkbox: "flex items-center gap-2 mb-6",
-  checkboxInput: "w-4 h-4 border border-neutral-300 rounded cursor-pointer",
+  checkboxInput:
+    "w-4 h-4 accent-dark border border-neutral-300 rounded cursor-pointer",
   checkboxLabel: "text-xs text-neutral-500",
   divider: "my-6 text-center text-xs text-neutral-400",
   link: "text-primary-500 hover:text-primary-600 transition",
