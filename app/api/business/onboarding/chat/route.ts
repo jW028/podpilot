@@ -24,6 +24,16 @@ interface ChatResponsePayload {
   framework?: BusinessFramework;
 }
 
+interface TavilySearchResult {
+  title?: string;
+  content?: string;
+  url?: string;
+}
+
+interface TavilySearchResponse {
+  results?: TavilySearchResult[];
+}
+
 const isFrameworkShapeValid = (payload: unknown): payload is BusinessFramework => {
   if (!payload || typeof payload !== "object") {
     return false;
@@ -54,6 +64,108 @@ const fallbackPayload: ChatResponsePayload = {
   frameworkReady: false,
 };
 
+const MAX_TAVILY_CONTEXT_CHARS = 7000;
+
+const normalizeText = (value: string) => value.replace(/\s+/g, " ").trim();
+
+const extractLatestUserMessage = (messages: ChatMessage[]) => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      return normalizeText(messages[index].content || "");
+    }
+  }
+
+  return "";
+};
+
+const buildTavilyQueries = (latestUserMessage: string) => {
+  const topic = normalizeText(latestUserMessage).slice(0, 120);
+  if (!topic) {
+    return [];
+  }
+
+  const year = new Date().getFullYear();
+
+  return [
+    `${year} market demand trends for ${topic}`,
+    `competitor positioning and pricing for ${topic} in Malaysia ecommerce`,
+    `target audience pain points and buying behavior for ${topic}`,
+    `POD design and brand style trends for ${topic} ${year}`,
+    `business risks and challenges for ${topic} in online retail`,
+  ];
+};
+
+const buildResearchTopic = (
+  latestUserMessage: string,
+  framework?: BusinessFramework | null,
+) => {
+  const parts = [
+    latestUserMessage,
+    framework?.theme,
+    framework?.niche,
+    framework?.productLane,
+    framework?.targetAudience,
+  ]
+    .filter((value): value is string => Boolean(value && value.trim()))
+    .map((value) => normalizeText(value));
+
+  return normalizeText(parts.join(" ")).slice(0, 160);
+};
+
+const runTavilyResearch = async (apiKey: string, queries: string[]) => {
+  const collected: string[] = [];
+
+  for (const query of queries) {
+    try {
+      const response = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          api_key: apiKey,
+          query,
+          max_results: 3,
+          topic: "general",
+          search_depth: "advanced",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        collected.push(
+          `Query: ${query}\nTavily error (${response.status}): ${normalizeText(errorText).slice(0, 220)}`,
+        );
+        continue;
+      }
+
+      const payload = (await response.json()) as TavilySearchResponse;
+      const top = (payload.results || []).slice(0, 3);
+
+      if (!top.length) {
+        collected.push(`Query: ${query}\nNo relevant results returned.`);
+        continue;
+      }
+
+      const block = top
+        .map((item, index) => {
+          const title = normalizeText(item.title || "Untitled");
+          const snippet = normalizeText(item.content || "No snippet").slice(0, 320);
+          const link = item.url || "N/A";
+          return `${index + 1}. Title: ${title}\nSnippet: ${snippet}\nLink: ${link}`;
+        })
+        .join("\n");
+
+      collected.push(`Query: ${query}\n${block}`);
+    } catch (error) {
+      console.error(`Tavily search failed for query: ${query}`, error);
+      collected.push(`Query: ${query}\nSearch failed due to network/runtime error.`);
+    }
+  }
+
+  return collected.join("\n\n").slice(0, MAX_TAVILY_CONTEXT_CHARS);
+};
+
 const parseModelJson = (content: string): unknown => {
   try {
     return JSON.parse(content);
@@ -76,6 +188,7 @@ const parseModelJson = (content: string): unknown => {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
+      businessId?: string;
       messages?: ChatMessage[];
       framework?: BusinessFramework | null;
     };
@@ -93,6 +206,7 @@ export async function POST(request: Request) {
     const apiKey = process.env.GLM_API_KEY;
     const model = process.env.GLM_MODEL || "ilmu-glm-5.1";
     const baseUrl = process.env.ILMU_BASE_URL || "https://api.ilmu.ai/v1";
+    const tavilyApiKey = process.env.TAVILY_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
@@ -104,14 +218,32 @@ export async function POST(request: Request) {
       );
     }
 
+    const latestUserMessage = extractLatestUserMessage(body.messages);
+    const researchTopic = buildResearchTopic(latestUserMessage, body.framework);
+    const tavilyQueries = buildTavilyQueries(researchTopic).slice(0, 4);
+    const tavilyContext =
+      tavilyApiKey && tavilyQueries.length
+        ? await runTavilyResearch(tavilyApiKey, tavilyQueries)
+        : "";
+
+    const externalResearchContext = tavilyContext
+      ? `External Tavily research context:\n${tavilyContext}`
+      : "External Tavily research context is unavailable for this turn.";
+
+    const today = new Date().toISOString().slice(0, 10);
+
     const systemPrompt = `You are Business Genesis Agent for a POD app.
-Goal: converse naturally like ChatGPT to clarify business direction.
+Today: ${today}
+Goal: converse naturally like ChatGPT to clarify business direction, validate commercial viability, and challenge weak assumptions.
 
 Rules:
 - Ask concise follow-up questions when details are missing.
 - Focus only on business feeling/theme/vibe, audience, product lane, direction.
 - Do not finalize visual design.
-- When enough details are confirmed and user shows proceed confidence, set frameworkReady=true and return framework.
+- Use external research context to provide current market signals, competitive pressure, and risk notes.
+- Do NOT blindly agree with user ideas. Discuss tradeoffs: what is strong, what is risky, and what should be improved.
+- If idea quality is weak, suggest a sharper angle and ask if the user still wants to proceed.
+- Only set frameworkReady=true when details are complete AND user clearly wants to proceed after discussion.
 
 Return STRICT JSON with this exact shape:
 {
@@ -131,7 +263,9 @@ Return STRICT JSON with this exact shape:
   }
 }
 
-If not ready, set frameworkReady=false and framework=null.`;
+If not ready, set frameworkReady=false and framework=null.
+
+${externalResearchContext}`;
 
     const messagesForModel = [
       { role: "system", content: systemPrompt },
