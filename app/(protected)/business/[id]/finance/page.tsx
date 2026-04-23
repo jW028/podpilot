@@ -1,7 +1,10 @@
-import React from "react";
+import FinancePage from "@/components/ui/finance/FinancePage";
 
-const BusinessFinance = () => {
-  return <div>Business Finance</div>;
-};
+interface Props {
+  params: Promise<{ id: string }>;
+}
 
-export default BusinessFinance;
+export default async function FinanceRoute({ params }: Props) {
+  const { id } = await params;
+  return <FinancePage businessId={id} />;
+}

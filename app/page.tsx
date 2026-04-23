@@ -1,8 +1,9 @@
+import LandingPage from "@/components/ui/landing/LandingPage";
 import Footer from "@/components/ui/layout/Footer";
 import Header from "@/components/ui/layout/Header";
-import LandingPage from "@/components/ui/landing/LandingPage";
+import React from "react";
 
-export default function Home() {
+const Home = () => {
   return (
     <>
       <Header />
@@ -10,4 +11,6 @@ export default function Home() {
       <Footer />
     </>
   );
-}
+};
+
+export default Home;
