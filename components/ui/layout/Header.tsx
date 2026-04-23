@@ -1,9 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import React from "react";
 import Button from "../shared/Button";
-import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import ProfileDropdown from "../shared/ProfileDropdown";
 import Logo from "../shared/Logo";

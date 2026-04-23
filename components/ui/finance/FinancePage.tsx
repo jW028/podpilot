@@ -363,7 +363,6 @@ export default function FinancePage({ businessId }: { businessId: string }) {
 
               {/* ── LEFT: CHART + SIGNALS ──────────────────────────── */}
               <div className="flex flex-col gap-[16px]">
-
                 {/* Revenue chart */}
                 <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-[12px] p-[20px] h-[220px] flex flex-col">
                   <div className="font-serif text-[16px] text-[#141412] mb-[4px]">
@@ -489,8 +488,14 @@ export default function FinancePage({ businessId }: { businessId: string }) {
                       <div className="w-[22px] h-[22px] rounded-full bg-[#C9A84C] flex items-center justify-center text-[9px] shrink-0 font-semibold">FA</div>
                       <div className="px-[12px] py-[10px] bg-[#FAFAF8] rounded-[2px_10px_10px_10px] flex items-center gap-[4px]">
                         <div className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce" />
-                        <div className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <div className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                        <div
+                          className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce"
+                          style={{ animationDelay: "150ms" }}
+                        />
+                        <div
+                          className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce"
+                          style={{ animationDelay: "300ms" }}
+                        />
                       </div>
                     </div>
                   )}

@@ -1,11 +1,16 @@
+import LandingPage from "@/components/ui/landing/LandingPage";
+import Footer from "@/components/ui/layout/Footer";
+import Header from "@/components/ui/layout/Header";
 import React from "react";
 
-const LandingPage = () => {
+const Home = () => {
   return (
-    <main className="h-[50dvh] text-sm w-screen flex justify-center items-center font-serif text-neutral-500">
-      landing page
-    </main>
+    <>
+      <Header />
+      <LandingPage />
+      <Footer />
+    </>
   );
 };
 
-export default LandingPage;
+export default Home;
