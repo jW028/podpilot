@@ -145,7 +145,7 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await glm.chat.completions.create({
-      model: process.env.GLM_MODEL || 'glm-4.5',
+      model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
       messages,
       tools: TOOL_DEFINITIONS as any,
       tool_choice: 'auto',
