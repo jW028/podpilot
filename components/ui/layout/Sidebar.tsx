@@ -4,169 +4,60 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import Logo from "../shared/Logo";
+import { GoWorkflow } from "react-icons/go";
+import { MdOutlineAnalytics, MdOutlineLightbulb } from "react-icons/md";
+import { TbArrowBackUp, TbCubeSend } from "react-icons/tb";
+import { BiSupport } from "react-icons/bi";
+import { IoSettingsOutline } from "react-icons/io5";
+import { LuBoxes } from "react-icons/lu";
+import Button from "../shared/Button";
 
 interface SidebarProps {
   businessId?: string;
 }
 
-// ── icons (simple SVG inline, matches the image style) ──────────────────────
-
-const IconOverview = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 15 15"
-    fill="none"
-    className="shrink-0"
-  >
-    <circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" strokeWidth="1.2" />
-    <circle cx="7.5" cy="7.5" r="2" stroke="currentColor" strokeWidth="1.2" />
-  </svg>
-);
-
-const IconCommand = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 15 15"
-    fill="none"
-    className="shrink-0"
-  >
-    <path
-      d="M7.5 1.5L13.5 7.5L7.5 13.5L1.5 7.5L7.5 1.5Z"
-      stroke="currentColor"
-      strokeWidth="1.2"
-    />
-    <path d="M7.5 4.5L10.5 7.5L7.5 10.5L4.5 7.5L7.5 4.5Z" fill="currentColor" />
-  </svg>
-);
-
-const IconProducts = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 15 15"
-    fill="none"
-    className="shrink-0"
-  >
-    <rect
-      x="1.5"
-      y="1.5"
-      width="5"
-      height="5"
-      rx="0.5"
-      stroke="currentColor"
-      strokeWidth="1.2"
-    />
-    <rect
-      x="8.5"
-      y="1.5"
-      width="5"
-      height="5"
-      rx="0.5"
-      stroke="currentColor"
-      strokeWidth="1.2"
-    />
-    <rect
-      x="1.5"
-      y="8.5"
-      width="5"
-      height="5"
-      rx="0.5"
-      stroke="currentColor"
-      strokeWidth="1.2"
-    />
-    <rect
-      x="8.5"
-      y="8.5"
-      width="5"
-      height="5"
-      rx="0.5"
-      stroke="currentColor"
-      strokeWidth="1.2"
-    />
-  </svg>
-);
-
-const IconLaunch = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 15 15"
-    fill="none"
-    className="shrink-0"
-  >
-    <path
-      d="M2 13L7 2L12 8L8 9.5L2 13Z"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const IconSupport = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 15 15"
-    fill="none"
-    className="shrink-0"
-  >
-    <circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" strokeWidth="1.2" />
-    <circle cx="7.5" cy="7.5" r="2.5" stroke="currentColor" strokeWidth="1.2" />
-  </svg>
-);
-
-const IconFinance = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 15 15"
-    fill="none"
-    className="shrink-0"
-  >
-    <path
-      d="M7.5 1.5L13.5 7.5L7.5 13.5L1.5 7.5L7.5 1.5Z"
-      stroke="currentColor"
-      strokeWidth="1.2"
-    />
-  </svg>
-);
-
-const IconSettings = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 15 15"
-    fill="none"
-    className="shrink-0"
-  >
-    <circle cx="7.5" cy="7.5" r="2" stroke="currentColor" strokeWidth="1.2" />
-    <circle
-      cx="7.5"
-      cy="7.5"
-      r="5.5"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeDasharray="2 2"
-    />
-  </svg>
-);
-
-const IconAllBusinesses = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 15 15"
-    fill="none"
-    className="shrink-0"
-  >
-    <circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" strokeWidth="1.2" />
-  </svg>
-);
-
-// ── nav config ───────────────────────────────────────────────────────────────
+const sidebarStyles = {
+  container:
+    "w-60 border-r border-neutral-300 flex flex-col h-full overflow-y-auto",
+  header: "px-4 border-b border-neutral-300",
+  businessSwitcher: "p-3",
+  businessPill:
+    "flex items-center justify-between p-2.5 bg-white border border-neutral-300 rounded-xl cursor-pointer hover:bg-light-secondary transition",
+  businessAvatar:
+    "w-8 h-8 rounded-lg bg-gradient-to-br from-primary-300 to-primary-500 flex items-center justify-center text-[11px] font-bold text-white shrink-0",
+  businessName: "text-[12px] text-dark leading-tight text-left",
+  businessSubtext: "text-[10px] text-neutral-400 leading-tight",
+  businessChevron: "text-neutral-400 shrink-0",
+  nav: "flex-1 px-3 pb-3 space-y-4",
+  navSection: "space-y-0.5",
+  navLabel:
+    "text-[10px] tracking-widest uppercase font-semibold text-neutral-400/50 my-2 px-1",
+  navRow: {
+    base: "flex items-center justify-between px-3 py-3 rounded-lg text-xs transition-colors",
+    active: "bg-dark text-white",
+    inactive: "text-neutral-500 hover:bg-light-secondary hover:text-dark",
+  },
+  navRowIcon: {
+    base: "shrink-0 text-sm",
+    active: "text-white",
+    inactive: "hover:text-neutral-500",
+  },
+  navRowContent: "flex items-center gap-2.5",
+  navRowLabel: "font-medium",
+  navRowMeta: "flex items-center gap-1.5",
+  badge:
+    "bg-primary-500 text-white text-[10px] font-semibold h-4 w-4 flex justify-center items-center rounded-full leading-none",
+  userFooter: "p-3 border-t border-neutral-300 flex flex-col gap-2",
+  userRow:
+    "flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer hover:bg-light-secondary transition group",
+  userAvatar:
+    "w-8 h-8 rounded-full bg-dark flex items-center justify-center text-light text-sm text-white shrink-0",
+  userInfo: "min-w-0 flex flex-col gap-1",
+  userName:
+    "text-[12px] font-semibold text-dark truncate max-w-35 leading-tight",
+  userEmail: "text-[10px] text-neutral-400 truncate max-w-35 leading-tight",
+};
 
 interface NavItem {
   label: string;
@@ -174,50 +65,46 @@ interface NavItem {
   icon: React.ReactNode;
   badge?: number;
   ai?: boolean;
-  businessScoped?: boolean; // uses /business/[id]/ prefix
+  businessScoped?: boolean;
 }
 
 const BUSINESS_NAV: NavItem[] = [
   {
-    label: "Overview",
-    href: "overview",
-    icon: <IconOverview />,
+    label: "Command Centre",
+    href: "workflow",
+    icon: <GoWorkflow />,
     businessScoped: true,
   },
   {
-    label: "AI Command Center",
+    label: "Build Your Business",
     href: "onboarding",
-    icon: <IconCommand />,
+    icon: <MdOutlineLightbulb />,
     businessScoped: true,
-    ai: true,
   },
   {
-    label: "Products",
+    label: "Manage Products",
     href: "products",
-    icon: <IconProducts />,
+    icon: <LuBoxes />,
     businessScoped: true,
-    ai: true,
   },
   {
     label: "Launch & Integrations",
     href: "launch",
-    icon: <IconLaunch />,
+    icon: <TbCubeSend />,
     businessScoped: true,
-    ai: true,
   },
   {
     label: "Customer Support",
     href: "support",
-    icon: <IconSupport />,
+    icon: <BiSupport />,
     businessScoped: true,
     badge: 8,
   },
   {
-    label: "Finance",
+    label: "Finance & Analytics",
     href: "finance",
-    icon: <IconFinance />,
+    icon: <MdOutlineAnalytics />,
     businessScoped: true,
-    ai: true,
   },
 ];
 
@@ -225,13 +112,15 @@ const SYSTEM_NAV: NavItem[] = [
   {
     label: "Settings",
     href: "settings",
-    icon: <IconSettings />,
+    icon: <IoSettingsOutline />,
     businessScoped: true,
   },
-  { label: "All Businesses", href: "/business", icon: <IconAllBusinesses /> },
+  {
+    label: "Return to Dashboard",
+    href: "dashboard",
+    icon: <TbArrowBackUp />,
+  },
 ];
-
-// ── component ────────────────────────────────────────────────────────────────
 
 const Sidebar = ({ businessId }: SidebarProps = {}) => {
   const pathname = usePathname();
@@ -246,14 +135,14 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
     .toUpperCase();
 
   const resolveHref = (item: NavItem) => {
-    if (!item.businessScoped) return item.href;
+    if (!item.businessScoped) return `/${item.href}`;
     if (businessId) return `/business/${businessId}/${item.href}`;
     return "#";
   };
 
   const isActive = (item: NavItem) => {
     const href = resolveHref(item);
-    return pathname === href || pathname.startsWith(href + "/");
+    return pathname === href;
   };
 
   const NavRow = ({ item }: { item: NavItem }) => {
@@ -263,51 +152,55 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
     return (
       <Link
         href={href}
-        className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-          active
-            ? "bg-[#1a1a18] text-white"
-            : "text-[#6B6A64] hover:bg-[#EEEDEA] hover:text-[#141412]"
+        className={`${sidebarStyles.navRow.base} ${
+          active ? sidebarStyles.navRow.active : sidebarStyles.navRow.inactive
         }`}
       >
-        <div className="flex items-center gap-2.5">
-          <span className={active ? "text-white" : "text-[#9E9D97]"}>
+        <div className={sidebarStyles.navRowContent}>
+          <span
+            className={`${sidebarStyles.navRowIcon.base} ${
+              active
+                ? sidebarStyles.navRowIcon.active
+                : sidebarStyles.navRowIcon.inactive
+            }`}
+          >
             {item.icon}
           </span>
-          <span className="font-medium">{item.label}</span>
+          <span className={sidebarStyles.navRowLabel}>{item.label}</span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className={sidebarStyles.navRowMeta}>
           {item.badge != null && (
-            <span className="bg-[#C9A84C] text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none">
-              {item.badge}
-            </span>
-          )}
-          {item.ai && (
-            <span
-              className={`text-[10px] font-semibold ${active ? "text-[#C9A84C]" : "text-[#C9A84C]"}`}
-            >
-              AI
-            </span>
+            <span className={sidebarStyles.badge}>{item.badge}</span>
           )}
         </div>
       </Link>
     );
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
+
+  const numberOfActiveAgents = 3;
+
   return (
-    <aside className="w-60 bg-[#F7F6F2] border-r border-[#E8E7E2] flex flex-col h-full overflow-y-auto">
+    <aside className={sidebarStyles.container}>
       {/* Business switcher pill */}
-      <div className="p-3">
-        <div className="flex items-center justify-between p-2.5 bg-white border border-[#E8E7E2] rounded-xl cursor-pointer hover:bg-[#EEEDEA] transition">
+      <div className={sidebarStyles.header}>
+        <Logo />
+      </div>
+      <button className={sidebarStyles.businessSwitcher}>
+        <div className={sidebarStyles.businessPill}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#E8D08A] to-[#C9A84C] flex items-center justify-center text-[11px] font-bold text-white shrink-0">
-              MK
-            </div>
-            <div>
-              <div className="text-[13px] font-semibold text-[#141412] leading-tight">
-                MokiPrints
-              </div>
-              <div className="text-[11px] text-[#9E9D97] leading-tight">
-                3 agents active
+            <div className={sidebarStyles.businessAvatar}>MK</div>
+            <div className="flex flex-col gap-1">
+              <div className={sidebarStyles.businessName}>MokiPrints</div>
+              <div className={sidebarStyles.businessSubtext}>
+                {numberOfActiveAgents} agents active
               </div>
             </div>
           </div>
@@ -316,7 +209,7 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
             height="12"
             viewBox="0 0 12 12"
             fill="none"
-            className="text-[#9E9D97] shrink-0"
+            className={sidebarStyles.businessChevron}
           >
             <path
               d="M3 4.5L6 7.5L9 4.5"
@@ -327,16 +220,14 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
             />
           </svg>
         </div>
-      </div>
+      </button>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 pb-3 space-y-4">
+      <nav className={sidebarStyles.nav}>
         {/* BUSINESS section */}
         <div>
-          <div className="text-[10px] font-semibold tracking-widest uppercase text-[#B0AFA9] px-3 mb-1">
-            Business
-          </div>
-          <div className="space-y-0.5">
+          <div className={sidebarStyles.navLabel}>Business</div>
+          <div className={sidebarStyles.navSection}>
             {BUSINESS_NAV.map((item) => (
               <NavRow key={item.href} item={item} />
             ))}
@@ -345,10 +236,8 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
 
         {/* SYSTEM section */}
         <div>
-          <div className="text-[10px] font-semibold tracking-widest uppercase text-[#B0AFA9] px-3 mb-1">
-            System
-          </div>
-          <div className="space-y-0.5">
+          <div className={sidebarStyles.navLabel}>System</div>
+          <div className={sidebarStyles.navSection}>
             {SYSTEM_NAV.map((item) => (
               <NavRow key={item.href} item={item} />
             ))}
@@ -357,29 +246,27 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
       </nav>
 
       {/* User footer */}
-      <div className="p-3 border-t border-[#E8E7E2]">
-        <div className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer hover:bg-[#EEEDEA] transition group">
+      <div className={sidebarStyles.userFooter}>
+        {/* profile btn */}
+        <Link href={"/profile"} className={sidebarStyles.userRow}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-[#2A2A27] flex items-center justify-center text-[11px] font-semibold text-white shrink-0">
-              {initials}
-            </div>
-            <div className="min-w-0">
-              <div className="text-[13px] font-semibold text-[#141412] truncate max-w-[120px] leading-tight">
-                {displayName}
-              </div>
-              <div className="text-[11px] text-[#9E9D97] truncate max-w-[120px] leading-tight">
-                {user?.email}
-              </div>
+            <div className={sidebarStyles.userAvatar}>{initials}</div>
+            <div className={sidebarStyles.userInfo}>
+              <div className={sidebarStyles.userName}>{displayName}</div>
+              <div className={sidebarStyles.userEmail}>{user?.email}</div>
             </div>
           </div>
-          <button
-            onClick={() => signOut?.()}
-            className="text-[11px] text-[#9E9D97] hover:text-[#C0584A] transition opacity-0 group-hover:opacity-100 shrink-0"
-            title="Sign out"
-          >
-            ↩
-          </button>
-        </div>
+        </Link>
+
+        {/* logout btn */}
+        <Button
+          variant="outline"
+          className="w-full"
+          size="sm"
+          onClick={handleLogout}
+        >
+          Sign Out
+        </Button>
       </div>
     </aside>
   );
