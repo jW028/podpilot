@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
 import Button from "@/components/ui/shared/Button";
+import OAuthButtons from "@/components/ui/shared/OAuthButtons";
+import { FiEye, FiEyeOff } from "react-icons/fi";
 
 const loginStyles = {
   container: "min-h-screen flex flex-col bg-light",
@@ -12,12 +14,13 @@ const loginStyles = {
   heading: "font-serif text-3xl font-bold text-light-primary mb-2",
   subtext: "text-neutral-400 text-sm mb-8",
   formGroup: "mb-5",
-  label: "block text-sm font-medium text-light-primary mb-2",
+  label: "block text-xs font-medium text-light-primary mb-2",
   input:
-    "w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-light-primary",
+    "w-full px-4 py-2 border text-sm border-neutral-300 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-light-primary",
   checkbox: "flex items-center gap-2 mb-6",
-  checkboxInput: "w-4 h-4 border border-neutral-300 rounded cursor-pointer",
-  checkboxLabel: "text-sm text-neutral-500",
+  checkboxInput:
+    "w-4 h-4 accent-black border border-neutral-300 rounded cursor-pointer",
+  checkboxLabel: "text-sm text-neutral-500 text-xs",
   divider: "my-6 text-center text-xs text-neutral-400",
   link: "text-primary-500 hover:text-primary-600 transition",
   errorMessage:
@@ -31,6 +34,7 @@ const LoginPage = () => {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -92,6 +96,15 @@ const LoginPage = () => {
             <div className={loginStyles.successMessage}>{success}</div>
           )}
 
+          {/* OAuth Buttons */}
+          <OAuthButtons
+            disabled={loading}
+            onError={setError}
+            onLoading={setLoading}
+          />
+
+          <div className={loginStyles.divider}>Or continue with email</div>
+
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email */}
             <div className={loginStyles.formGroup}>
@@ -115,16 +128,26 @@ const LoginPage = () => {
               <label htmlFor="password" className={loginStyles.label}>
                 Password
               </label>
-              <input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                className={loginStyles.input}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-                required
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className={loginStyles.input}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-700 transition-colors"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <FiEye size={18} /> : <FiEyeOff size={18} />}
+                </button>
+              </div>
             </div>
 
             {/* Remember me */}
@@ -164,7 +187,7 @@ const LoginPage = () => {
 
           {/* Forgot password link */}
           <div className="text-center">
-            <a href="#" className={`text-sm ${loginStyles.link}`}>
+            <a href="#" className={`text-xs ${loginStyles.link}`}>
               Forgot your password?
             </a>
           </div>

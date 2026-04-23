@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
 import Button from "@/components/ui/shared/Button";
+import OAuthButtons from "@/components/ui/shared/OAuthButtons";
+import { FiEye, FiEyeOff } from "react-icons/fi";
 
 const registerStyles = {
   container: "min-h-screen flex flex-col bg-light",
@@ -12,12 +14,12 @@ const registerStyles = {
   heading: "font-serif text-3xl font-bold text-light-primary mb-2",
   subtext: "text-neutral-400 text-sm mb-8",
   formGroup: "mb-5",
-  label: "block text-sm font-medium text-light-primary mb-2",
+  label: "block text-xs font-medium text-light-primary mb-2",
   input:
-    "w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-light-primary",
+    "w-full px-4 py-2 text-sm border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-light-primary",
   checkbox: "flex items-center gap-2 mb-6",
   checkboxInput: "w-4 h-4 border border-neutral-300 rounded cursor-pointer",
-  checkboxLabel: "text-sm text-neutral-500",
+  checkboxLabel: "text-xs text-neutral-500",
   divider: "my-6 text-center text-xs text-neutral-400",
   link: "text-primary-500 hover:text-primary-600 transition",
   errorMessage:
@@ -32,7 +34,9 @@ const RegisterPage = () => {
   const [fullname, setFullname] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -118,6 +122,15 @@ const RegisterPage = () => {
             <div className={registerStyles.successMessage}>{success}</div>
           )}
 
+          {/* OAuth Buttons */}
+          <OAuthButtons
+            disabled={loading}
+            onError={setError}
+            onLoading={setLoading}
+          />
+
+          <div className={registerStyles.divider}>Or register with email</div>
+
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Full Name */}
             <div className={registerStyles.formGroup}>
@@ -158,16 +171,26 @@ const RegisterPage = () => {
               <label htmlFor="password" className={registerStyles.label}>
                 Password
               </label>
-              <input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                className={registerStyles.input}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-                required
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className={registerStyles.input}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-700 transition-colors"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <FiEye size={18} /> : <FiEyeOff size={18} />}
+                </button>
+              </div>
             </div>
 
             {/* Confirm Password */}
@@ -175,16 +198,32 @@ const RegisterPage = () => {
               <label htmlFor="confirmPassword" className={registerStyles.label}>
                 Confirm password
               </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                placeholder="••••••••"
-                className={registerStyles.input}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={loading}
-                required
-              />
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className={registerStyles.input}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={loading}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-700 transition-colors"
+                  aria-label={
+                    showConfirmPassword ? "Hide password" : "Show password"
+                  }
+                >
+                  {showConfirmPassword ? (
+                    <FiEye size={18} />
+                  ) : (
+                    <FiEyeOff size={18} />
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Terms & Conditions */}

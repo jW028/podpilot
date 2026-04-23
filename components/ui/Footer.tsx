@@ -22,7 +22,12 @@ const Footer = () => {
       <div className={footerStyles.wrapper}>
         {/* logo & social links */}
         <div className={footerStyles.topSection}>
-          <Image src="/logo.svg" alt="Podpilot logo" width={75} height={25} />
+          <Image
+            src="/podpilot-logo.svg"
+            alt="Podpilot Logo"
+            width={75}
+            height={25}
+          />
           <div className="flex gap-6">
             <a href="#" className={footerStyles.socialLink}>
               Twitter
