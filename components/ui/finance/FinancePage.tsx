@@ -279,7 +279,7 @@ export default function FinancePage({ businessId }: { businessId: string }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `finance-report-${businessId}-${new Date().toISOString().split('T')[0]}.html`;
+      a.download = `finance-report-${businessId}-${new Date().toISOString().split('T')[0]}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {

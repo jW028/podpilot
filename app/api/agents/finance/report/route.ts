@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
+import chromium from '@sparticuz/chromium-min';
+import puppeteer from 'puppeteer-core';
+
+// Give this route up to 60s — Puppeteer needs time to launch Chromium
+export const maxDuration = 60;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -234,15 +239,6 @@ ${insights}`,
 </head>
 <body style="margin:0;padding:0;font-family:system-ui,-apple-system,sans-serif;background:#F7F6F2;color:#141412;">
 
-  <!-- PRINT BUTTON (hidden when printing) -->
-  <div class="no-print" style="position:fixed;top:20px;right:24px;z-index:999;">
-    <button
-      onclick="window.print()"
-      style="background:#C9A84C;color:#FAFAF8;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.2);">
-      ⬇ Export as PDF
-    </button>
-  </div>
-
   <!-- COVER -->
   <div style="background:#141412;color:#FAFAF8;padding:60px 48px 48px;min-height:200px;">
     <div style="font-size:11px;letter-spacing:0.12em;color:#C9A84C;text-transform:uppercase;margin-bottom:16px;">Podilot · Finance Agent</div>
@@ -337,11 +333,38 @@ ${insights}`,
 </body>
 </html>`;
 
+    // ── Convert HTML → PDF via headless Chromium ───────────────────────
+    const executablePath = await chromium.executablePath(
+      'https://github.com/Sparticuz/chromium/releases/download/v147.0.0/chromium-v147.0.0-pack.tar'
+    );
+
+    const browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: true,
+    });
+
+    let pdfBuffer: Buffer;
+    try {
+      const page = await browser.newPage();
+      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+      pdfBuffer = Buffer.from(
+        await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: { top: '0', right: '0', bottom: '0', left: '0' },
+        })
+      );
+    } finally {
+      await browser.close();
+    }
+
     const date = new Date().toISOString().split('T')[0];
-    return new Response(htmlContent, {
+    return new Response(pdfBuffer, {
       headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Content-Disposition': `attachment; filename="finance-report-${businessId}-${date}.html"`,
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="finance-report-${businessId}-${date}.pdf"`,
       },
     });
 
