@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { encryptPrintifyToken } from "@/lib/printify/credentials";
+
+type PrintifyShop = {
+  id: string | number;
+  title?: string;
+  sales_channel?: string;
+};
+
+type PrintifyChannel = {
+  shop_id: string;
+  title: string;
+  channel: string;
+};
 
 /**
  * Handles Printify OAuth callback
@@ -82,7 +95,7 @@ export async function GET(request: NextRequest) {
       throw new Error("Failed to fetch Printify shops");
     }
 
-    const shopsData = await shopsResponse.json();
+    const shopsData = await shopsResponse.json() as { data?: PrintifyShop[] };
     const shops = shopsData.data || [];
 
     if (shops.length === 0) {
@@ -93,6 +106,13 @@ export async function GET(request: NextRequest) {
 
     // Use the first shop or you could implement shop selection
     const primaryShop = shops[0];
+
+    // Build sales_channels array from all shops
+    const salesChannels: PrintifyChannel[] = shops.map((shop) => ({
+      shop_id: String(shop.id),
+      title: shop.title || '',
+      channel: shop.sales_channel || 'disconnected',
+    }));
 
     // Create/update user in Supabase with Printify info
     const supabase = createServerClient(
@@ -121,16 +141,16 @@ export async function GET(request: NextRequest) {
       // Sign up with temporary Printify email
       const printifyEmail = `printify-${primaryShop.id}-${Date.now()}@podpilot.local`;
 
-      const { data: signUpData, error: signUpError } =
+      const { error: signUpError } =
         await supabase.auth.signUp({
           email: printifyEmail,
           password: Math.random().toString(36).substring(16), // Random password (OAuth only)
           options: {
             data: {
               printify_connected: true,
-              printify_access_token: accessToken,
               printify_shop_id: primaryShop.id,
               printify_shop_title: primaryShop.title,
+              printify_sales_channels: salesChannels,
             },
           },
         });
@@ -142,45 +162,36 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Store Printify token in database
-      if (signUpData.user) {
-        await supabase
-          .from("user_integrations")
-          .insert({
-            user_id: signUpData.user.id,
-            provider: "printify",
-            access_token: accessToken,
-            refresh_token: tokenData.refresh_token,
-            shop_id: primaryShop.id,
-            shop_name: primaryShop.title,
-            connected_at: new Date().toISOString(),
-          })
-          .throwOnError();
-      }
+      // Token is now persisted per-business when a business exists.
     } else {
       // Update existing user with Printify info
       await supabase.auth.updateUser({
         data: {
           printify_connected: true,
-          printify_access_token: accessToken,
           printify_shop_id: primaryShop.id,
           printify_shop_title: primaryShop.title,
+          printify_sales_channels: salesChannels,
         },
       });
 
-      // Store/update Printify token in database
-      await supabase
-        .from("user_integrations")
-        .upsert({
-          user_id: user.id,
-          provider: "printify",
-          access_token: accessToken,
-          refresh_token: tokenData.refresh_token,
-          shop_id: primaryShop.id,
-          shop_name: primaryShop.title,
-          connected_at: new Date().toISOString(),
-        })
-        .throwOnError();
+      // Update sales_channels + encrypted token on the user's business
+      const { data: businesses } = await supabase
+        .from("businesses")
+        .select("id")
+        .eq("user_id", user.id)
+        .limit(1);
+
+      if (businesses && businesses.length > 0) {
+        await supabase
+          .from("businesses")
+          .update({
+            printify_pat_hint: encryptPrintifyToken(accessToken),
+            sales_channels: salesChannels,
+            printify_shop_id: String(primaryShop.id),
+            marketplace: primaryShop.sales_channel || primaryShop.title,
+          })
+          .eq("id", businesses[0].id);
+      }
     }
 
     // Clean up state cookie
