@@ -6,6 +6,7 @@ import Button from "../shared/Button";
 import { useAuth } from "@/hooks/useAuth";
 import ProfileDropdown from "../shared/ProfileDropdown";
 import Logo from "../shared/Logo";
+import LoadingState from "../shared/LoadingState";
 
 const Header = () => {
   const { user, loading } = useAuth();
@@ -21,7 +22,7 @@ const Header = () => {
       </div>
       <div className="flex justify-center items-center">
         {loading ? (
-          <div className="w-10 h-10 bg-neutral-200 rounded-full animate-pulse" />
+          <LoadingState message="Loading..." />
         ) : user ? (
           // Logged in state
           <div className="flex items-center gap-2">

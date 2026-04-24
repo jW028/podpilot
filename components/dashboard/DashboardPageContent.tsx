@@ -31,7 +31,11 @@ interface BusinessWithMetrics extends Business {
   };
 }
 
-const DashboardPageContent = () => {
+interface DashboardPageContentProps {
+  activeCount?: number;
+}
+
+const DashboardPageContent = ({ activeCount }: DashboardPageContentProps) => {
   const [businesses, setBusinesses] = useState<BusinessWithMetrics[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -144,7 +148,7 @@ const DashboardPageContent = () => {
   return (
     <div className="min-h-screen bg-light-secondary">
       <DashboardHeader
-        businessCount={businesses.filter((b) => b.status === "active").length}
+        businessCount={activeCount}
         onCreateClick={() => setShowCreateForm(!showCreateForm)}
       />
 

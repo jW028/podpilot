@@ -21,11 +21,16 @@ const DashboardHeader = ({
 
         <div className="border-l border-0 border-neutral-300 h-6"></div>
 
-        <div>
-          <h1 className="font-serif font-bold">Your Businesses</h1>
-          <p className="font-sans text-xs text-neutral-500">
-            {businessCount} active store{businessCount !== 1 ? "s" : ""}
-          </p>
+        <div className="flex flex-col justify-center">
+          <h1 className="font-serif font-bold text-dark leading-none mb-1.5">
+            Your Businesses
+          </h1>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            <p className="font-sans text-xs text-neutral-500 leading-none">
+              {businessCount} active store{businessCount !== 1 ? "s" : ""}
+            </p>
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-2">
