@@ -106,52 +106,45 @@ export async function POST(request: Request) {
       ? signals.map(s => `  [${s.action?.toUpperCase()}] ${s.product_name} — ${s.reason}`).join('\n')
       : '  No active signals.';
 
-    // ── Compact prompt ──────────────────────────────────────────────────
-    // GLM generates 3 narrative sections separated by ---SECTION--- delimiters.
-    // Plain text, no JSON — more reliable across model versions.
+    // ── Call GLM with 3 separate small prompts (parallel, each max_tokens:200) ─────
+    // One call per section = no delimiter parsing, no format guessing, always works.
     const glm = getGlmClient();
 
-    const completion = await glm.chat.completions.create({
-      model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a professional financial analyst writing a report for a print-on-demand business.
-Write exactly 3 sections separated by the delimiter ---SECTION--- (on its own line).
-Section 1: Executive Summary (2-3 sentences on overall business health and highlights).
-Section 2: Key Observations (2-3 sentences on important product-level findings).
-Section 3: Strategic Recommendations (exactly 4 numbered action items, one per line).
-Plain text only — no JSON, no markdown, no HTML tags. Do not include section titles.`,
-        },
-        {
-          role: 'user',
-          content: `Business: ${businessName} | Marketplace: ${marketplace}
-Revenue: RM ${revenue} | Costs: RM ${costs} | Profit: RM ${profit} | Margin: ${margin}% | Orders: ${orders}
+    const dataContext = `Business: ${businessName} | Marketplace: ${marketplace} | Revenue: RM ${revenue} | Costs: RM ${costs} | Profit: RM ${profit} | Margin: ${margin}% | Orders: ${orders}\nProducts: ${productRows}\nSignals: ${signalRows}`;
 
-Revenue trend:
-${trendRows}
+    const [execRes, obsRes, recRes] = await Promise.all([
+      glm.chat.completions.create({
+        model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
+        messages: [
+          { role: 'system', content: 'You are a financial analyst. Write 2-3 sentences summarising overall business health and highlights for a print-on-demand store. Plain text only, no bullet points, no titles.' },
+          { role: 'user', content: dataContext },
+        ],
+        temperature: 0.4,
+        max_tokens: 180,
+      }),
+      glm.chat.completions.create({
+        model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
+        messages: [
+          { role: 'system', content: 'You are a financial analyst. Write 2-3 sentences on the most important product-level findings: which products perform well, which are underperforming, and why. Plain text only, no bullet points, no titles.' },
+          { role: 'user', content: dataContext },
+        ],
+        temperature: 0.4,
+        max_tokens: 180,
+      }),
+      glm.chat.completions.create({
+        model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
+        messages: [
+          { role: 'system', content: 'You are a financial analyst. Write exactly 4 strategic action items for this print-on-demand business. Format: "1. [action]" on each line. Plain text only, no intro sentence, no titles.' },
+          { role: 'user', content: dataContext },
+        ],
+        temperature: 0.4,
+        max_tokens: 180,
+      }),
+    ]);
 
-Products:
-${productRows}
-
-Signals:
-${signalRows}
-
-Existing insights:
-${insights}`,
-        },
-      ],
-      temperature: 0.4,
-      max_tokens: 700,
-    });
-
-    // Split by ---SECTION--- delimiter
-    const rawContent = (completion.choices[0]?.message?.content ?? '').trim();
-    const sections = rawContent.split(/---SECTION---/i).map(s => s.trim());
-
-    const execSummary     = sections[0] || insights || 'Analysis unavailable.';
-    const keyObs          = sections[1] || '';
-    const recommendations = sections[2] || '';
+    const execSummary     = execRes.choices[0]?.message?.content?.trim() || insights || 'Analysis unavailable.';
+    const keyObs          = obsRes.choices[0]?.message?.content?.trim()  || 'No additional observations.';
+    const recommendations = recRes.choices[0]?.message?.content?.trim()  || '1. Review underperforming products\n2. Boost high-margin items\n3. Optimise pricing strategy\n4. Monitor monthly trends';
 
     // ── Build HTML report (data tables rendered here, not by GLM) ───────
     const signalBadgeColor: Record<string, string> = {
