@@ -21,7 +21,7 @@ const ProductsPageHeader = ({
   return (
     <div className="border-b border-0 border-neutral-300 flex justify-between items-center py-6 px-8">
       <div className="space-y-2">
-        <h1 className="font-serif text-xl">Products</h1>
+        <h1 className="font-serif text-xl font-bold">Products</h1>
         <div className="text-xs text-neutral-500 gap-2 flex items-center justify-center">
           <p>
             {totalProducts} {totalProducts == 1 ? "product" : "products"}

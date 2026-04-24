@@ -1,10 +1,10 @@
 import CredentialsGuidePage from "@/components/ui/launch/CredentialsGuidePage";
 
 interface Props {
-  params: Promise<{ id: string }>;
+  params: Promise<{ businessId: string }>;
 }
 
 export default async function LaunchCredentialsRoute({ params }: Props) {
-  const { id } = await params;
-  return <CredentialsGuidePage businessId={id} />;
+  const { businessId } = await params;
+  return <CredentialsGuidePage businessId={businessId} />;
 }

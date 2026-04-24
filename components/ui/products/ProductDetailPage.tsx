@@ -8,6 +8,8 @@ import ProductCanvas from "@/components/ui/products/ProductCanvas";
 import DesignAgent from "@/components/ui/products/DesignAgent";
 import Button from "@/components/ui/shared/Button";
 import type { Block } from "@/components/ui/products/EditableBlock";
+import { Dot, ChevronLeft } from "lucide-react";
+import { IoSparkles } from "react-icons/io5";
 
 interface ProductDetailPageProps {
   businessId: string;
@@ -80,6 +82,7 @@ const ProductDetailPage = ({
             attributes: null,
             design_path: null,
             status: "draft",
+            price: 0,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           });
@@ -320,12 +323,16 @@ const ProductDetailPage = ({
     }
   };
 
+  const formattedBusinessName = businessName
+    ?.toLowerCase()
+    .replace(/\s+/g, "-");
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full bg-light-secondary">
         <div className="text-center">
-          <div className="text-4xl mb-4">⏳</div>
-          <p className="text-neutral-600">Loading product...</p>
+          <div className="text-4xl mb-3">⏳</div>
+          <p className="text-neutral-500 text-sm">Loading product...</p>
         </div>
       </div>
     );
@@ -334,15 +341,16 @@ const ProductDetailPage = ({
   if (!product) {
     return (
       <div className="flex items-center justify-center h-full bg-light-secondary">
-        <div className="text-center">
-          <div className="text-4xl mb-4">❌</div>
-          <p className="text-neutral-600 mb-4">Product not found</p>
-          <Link
+        <div className="text-center space-y-3">
+          <div className="text-4xl">❌</div>
+          <p className="text-neutral-500 text-sm">Product not found</p>
+          <Button
+            variant="outline"
+            size="sm"
             href={`/business/${businessId}/products`}
-            className="text-primary-500 hover:underline"
           >
-            Back to products
-          </Link>
+            Back to Products
+          </Button>
         </div>
       </div>
     );
@@ -351,47 +359,78 @@ const ProductDetailPage = ({
   return (
     <div className="flex h-full bg-light-secondary">
       {/* Main Canvas Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <div className="bg-white border-b border-neutral-300 px-6 py-4 flex items-center justify-between">
-          <div>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header — matches ProductsPageHeader style */}
+        <div className="border-b border-neutral-300 flex justify-between items-center py-6 px-8 bg-white">
+          <div className="space-y-2">
+            {/* Breadcrumb back link */}
             <Link
               href={`/business/${businessId}/products`}
-              className="text-sm text-primary-500 hover:underline mb-2 inline-block"
+              className="inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-dark transition-colors"
             >
-              ← Back
+              <ChevronLeft className="h-3 w-3" />
+              Products
             </Link>
+            {/* Title row */}
             <div className="flex items-center gap-3">
-              <h1 className="font-serif text-3xl font-bold text-dark">
-                {isCreating ? "Create New Product" : "Edit Product"}
+              <h1 className="font-serif text-xl font-bold">
+                {isCreating ? "New Product" : product.title || "Edit Product"}
               </h1>
               <span
-                className={`text-xs font-semibold px-2 py-1 rounded-full ${getStatusColor(product.status)}`}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-light ${getStatusColor(product.status)}`}
               >
                 {product.status.charAt(0).toUpperCase() +
                   product.status.slice(1)}
               </span>
             </div>
-            {selectedProductType && (
-              <p className="text-sm text-neutral-600 mt-1">
-                Product Type: <strong>{selectedProductType}</strong>
+            {/* Sub-info row */}
+            <div className="text-xs text-neutral-500 flex items-center gap-2">
+              {selectedProductType && (
+                <>
+                  <p>{selectedProductType}</p>
+                  <Dot className="h-2 w-2" />
+                </>
+              )}
+              <p>
+                /business/{formattedBusinessName}/products/
+                {productId.slice(0, 8)}…
               </p>
-            )}
+            </div>
           </div>
-          <div className="flex gap-3">
+
+          {/* Action buttons */}
+          <div className="flex gap-2.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/business/${businessId}/products`)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="space-x-1.5"
+              onClick={handleConfirmProduct}
+              disabled={isSaving}
+            >
+              <IoSparkles />
+              <p>Confirm & Publish</p>
+            </Button>
             <Button
               variant="primary"
+              size="sm"
               onClick={handleSaveProduct}
               disabled={isSaving}
             >
-              {isSaving ? "Saving..." : "Save"}
+              {isSaving ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>
 
-        {/* Error Display */}
+        {/* Error banner */}
         {error && (
-          <div className="bg-red-50 border-b border-red-300 px-6 py-3 text-red-700 text-sm">
+          <div className="bg-red-50 border-b border-red-300 px-8 py-3 text-red-700 text-xs">
             {error}
           </div>
         )}
@@ -402,11 +441,10 @@ const ProductDetailPage = ({
           onBlockUpdate={handleBlockUpdate}
           onBlockRemove={handleBlockRemove}
           onBlockReorder={handleBlockReorder}
-          onBlockAdd={handleBlockAdd}
         />
       </div>
 
-      {/* Right Panel - Design Agent */}
+      {/* Right Panel — Design Agent (matches bg-dark side panel) */}
       <div className="w-96 hidden lg:flex bg-dark border-l border-neutral-300 overflow-hidden">
         <DesignAgent
           businessId={businessId}

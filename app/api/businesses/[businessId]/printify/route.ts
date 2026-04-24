@@ -86,11 +86,11 @@ async function assertBusinessOwnership(serviceClient: ReturnType<typeof createCl
   return business as OwnedBusiness;
 }
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ businessId: string }> }) {
   try {
-    const { id } = await params;
+    const { businessId } = await params;
     const { serviceClient, user } = await getAuthorizedSupabase(request);
-    const business = await assertBusinessOwnership(serviceClient, id, user.id);
+    const business = await assertBusinessOwnership(serviceClient, businessId, user.id);
 
     const decryptedToken = business.printify_pat_hint && isEncryptedTokenValue(business.printify_pat_hint)
       ? decryptPrintifyToken(business.printify_pat_hint)
@@ -114,11 +114,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ businessId: string }> }) {
   try {
-    const { id } = await params;
+    const { businessId } = await params;
     const { serviceClient, user } = await getAuthorizedSupabase(request);
-    await assertBusinessOwnership(serviceClient, id, user.id);
+    await assertBusinessOwnership(serviceClient, businessId, user.id);
 
     const body = await request.json();
     const apiKey = normalizePrintifyTokenInput(String(body?.apiKey || ''));
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       marketplace: primaryShop?.sales_channel || primaryShop?.title || null,
     };
 
-    await serviceClient.from('businesses').update(businessUpdate).eq('id', id).throwOnError();
+    await serviceClient.from('businesses').update(businessUpdate).eq('id', businessId).throwOnError();
 
     return NextResponse.json({
       success: true,

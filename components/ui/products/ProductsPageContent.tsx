@@ -80,7 +80,7 @@ const ProductsPageContent = ({
 
   return (
     <div className="flex">
-      <div className="h-full bg-light-secondary overflow-y-auto w-8/12">
+      <div className="bg-light-secondary h-screen overflow-y-auto w-8/12">
         <div className="p-8">
           {/* Status Filters */}
           <div className="flex gap-2 flex-wrap">
@@ -134,7 +134,7 @@ const ProductsPageContent = ({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 border px-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-8">
             {products.map((product) => (
               <div key={product.id} className="relative group">
                 <ProductCard
@@ -142,14 +142,6 @@ const ProductsPageContent = ({
                   businessId={businessId}
                   onDelete={handleDeleteProduct}
                 />
-                <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity gap-2 flex">
-                  <Link
-                    href={`/business/${businessId}/products/${product.id}`}
-                    className="px-2 py-1 bg-primary-500 text-white text-xs rounded hover:bg-primary-600 transition-colors"
-                  >
-                    Edit
-                  </Link>
-                </div>
               </div>
             ))}
           </div>
@@ -157,7 +149,9 @@ const ProductsPageContent = ({
       </div>
 
       {/* right panel design agent */}
-      <div className="w-4/12 border"></div>
+      <div className="w-4/12 flex justify-center items-center text-xs text-neutral-500">
+        to implement ai chatbot
+      </div>
     </div>
   );
 };

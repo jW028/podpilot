@@ -2,6 +2,17 @@
 
 import React, { useEffect, useState } from "react";
 import { Draggable } from "react-beautiful-dnd";
+import {
+  MdTextFields,
+  MdNotes,
+  MdTag,
+  MdImage,
+  MdList,
+  MdDragIndicator,
+  MdEditNote,
+  MdClose,
+  MdCheck,
+} from "react-icons/md";
 
 export interface Block {
   id: string;
@@ -21,6 +32,23 @@ interface EditableBlockProps {
   onRemove?: (blockId: string) => void;
 }
 
+const getTypeIcon = (type: string) => {
+  switch (type) {
+    case "text":
+      return <MdTextFields className="text-primary-500 text-sm" />;
+    case "textarea":
+      return <MdNotes className="text-primary-500 text-sm" />;
+    case "number":
+      return <MdTag className="text-primary-500 text-sm" />;
+    case "image":
+      return <MdImage className="text-primary-500 text-sm" />;
+    case "selection":
+      return <MdList className="text-primary-500 text-sm" />;
+    default:
+      return <MdTextFields className="text-primary-500 text-sm" />;
+  }
+};
+
 const EditableBlock = ({
   block,
   index,
@@ -34,47 +62,18 @@ const EditableBlock = ({
     setLocalValue(block.value);
   }, [block.value]);
 
-  const getTypeIcon = (type: string): string => {
-    switch (type) {
-      case "text":
-        return "📝";
-      case "textarea":
-        return "📄";
-      case "number":
-        return "🔢";
-      case "image":
-        return "🖼️";
-      case "selection":
-        return "📋";
-      default:
-        return "📦";
-    }
-  };
-
-  const getTypeColor = (type: string): string => {
-    switch (type) {
-      case "text":
-        return "bg-blue-50 border-blue-300 hover:border-blue-400";
-      case "textarea":
-        return "bg-indigo-50 border-indigo-300 hover:border-indigo-400";
-      case "number":
-        return "bg-purple-50 border-purple-300 hover:border-purple-400";
-      case "image":
-        return "bg-green-50 border-green-300 hover:border-green-400";
-      case "selection":
-        return "bg-orange-50 border-orange-300 hover:border-orange-400";
-      default:
-        return "bg-neutral-50 border-neutral-300 hover:border-neutral-400";
-    }
-  };
-
   const handleUpdate = () => {
     onUpdate({ ...block, value: localValue });
+    setIsExpanded(false);
   };
 
   const handleValueChange = (value: string | number | string[]) => {
     setLocalValue(value);
   };
+
+  const displayValue = localValue
+    ? String(localValue).substring(0, 60)
+    : null;
 
   return (
     <Draggable draggableId={block.id} index={index}>
@@ -82,54 +81,68 @@ const EditableBlock = ({
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
-          className={`border-2 rounded-lg p-4 transition-all ${getTypeColor(
-            block.type,
-          )} ${
+          className={`bg-white border rounded-xl p-3.5 transition-all select-none ${
             snapshot.isDragging
-              ? "shadow-lg scale-105 bg-opacity-90"
-              : "shadow-sm"
+              ? "border-primary-400 shadow-lg scale-[1.02] rotate-1"
+              : "border-neutral-300 shadow-sm hover:border-neutral-400 hover:shadow-md"
           }`}
           style={{
             ...provided.draggableProps.style,
-            cursor: snapshot.isDragging ? "grabbing" : "grab",
           }}
         >
-          {/* Header with drag handle and info */}
-          <div
-            {...provided.dragHandleProps}
-            className="flex items-center justify-between mb-3 cursor-grab active:cursor-grabbing"
-          >
-            <div className="flex items-center gap-2 flex-1">
-              <span className="text-lg">{getTypeIcon(block.type)}</span>
-              <div className="flex-1">
-                <p className="font-semibold text-dark text-sm">{block.label}</p>
-                <p className="text-xs text-neutral-500">{block.name}</p>
-              </div>
-              {block.required && (
-                <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">
-                  Required
-                </span>
-              )}
+          {/* ── Card Header ───────────────────────────────── */}
+          <div className="flex items-start gap-2 mb-2.5">
+            {/* Drag handle */}
+            <div
+              {...provided.dragHandleProps}
+              className="mt-0.5 text-neutral-300 hover:text-neutral-500 cursor-grab active:cursor-grabbing transition-colors flex-shrink-0"
+            >
+              <MdDragIndicator className="text-base" />
             </div>
+
+            {/* Type icon + label */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                {getTypeIcon(block.type)}
+                <p className="font-semibold text-dark text-xs leading-tight truncate">
+                  {block.label}
+                </p>
+                {block.required && (
+                  <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+                    Required
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-neutral-400 truncate">{block.name}</p>
+            </div>
+
+            {/* Edit / close toggle */}
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="ml-2 px-2 py-1 text-xs bg-neutral-200 hover:bg-neutral-300 rounded transition-colors"
+              className={`p-1 rounded-md transition-colors flex-shrink-0 ${
+                isExpanded
+                  ? "bg-neutral-200 text-dark hover:bg-neutral-300"
+                  : "text-neutral-400 hover:text-dark hover:bg-neutral-100"
+              }`}
             >
-              {isExpanded ? "✕" : "✎"}
+              {isExpanded ? (
+                <MdClose className="text-sm" />
+              ) : (
+                <MdEditNote className="text-sm" />
+              )}
             </button>
           </div>
 
-          {/* Editable Content */}
+          {/* ── Editable Content ──────────────────────────── */}
           {isExpanded ? (
-            <div className="space-y-2 mb-3">
+            <div className="space-y-2">
               {block.type === "text" && (
                 <input
                   type="text"
                   value={typeof localValue === "string" ? localValue : ""}
                   onChange={(e) => handleValueChange(e.target.value)}
-                  onBlur={handleUpdate}
                   placeholder={block.placeholder || "Enter text..."}
-                  className="w-full px-3 py-2 border border-neutral-400 rounded bg-white text-dark text-sm focus:outline-none focus:ring-2 focus:ring-current focus:ring-opacity-50"
+                  className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg bg-light-secondary text-dark text-xs focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
                   autoFocus
                 />
               )}
@@ -138,10 +151,9 @@ const EditableBlock = ({
                 <textarea
                   value={typeof localValue === "string" ? localValue : ""}
                   onChange={(e) => handleValueChange(e.target.value)}
-                  onBlur={handleUpdate}
                   placeholder={block.placeholder || "Enter description..."}
-                  rows={4}
-                  className="w-full px-3 py-2 border border-neutral-400 rounded bg-white text-dark text-sm focus:outline-none focus:ring-2 focus:ring-current focus:ring-opacity-50 resize-none"
+                  rows={3}
+                  className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg bg-light-secondary text-dark text-xs focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all resize-none"
                   autoFocus
                 />
               )}
@@ -155,9 +167,8 @@ const EditableBlock = ({
                       e.target.value ? parseFloat(e.target.value) : 0,
                     )
                   }
-                  onBlur={handleUpdate}
                   placeholder="Enter number..."
-                  className="w-full px-3 py-2 border border-neutral-400 rounded bg-white text-dark text-sm focus:outline-none focus:ring-2 focus:ring-current focus:ring-opacity-50"
+                  className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg bg-light-secondary text-dark text-xs focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
                   autoFocus
                 />
               )}
@@ -167,63 +178,47 @@ const EditableBlock = ({
                   type="text"
                   value={typeof localValue === "string" ? localValue : ""}
                   onChange={(e) => handleValueChange(e.target.value)}
-                  onBlur={handleUpdate}
                   placeholder="Supabase image URL..."
-                  className="w-full px-3 py-2 border border-neutral-400 rounded bg-white text-dark text-sm focus:outline-none focus:ring-2 focus:ring-current focus:ring-opacity-50 font-mono text-xs"
+                  className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg bg-light-secondary text-dark text-xs focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent font-mono transition-all"
                   autoFocus
                 />
               )}
 
               {block.type === "selection" && (
-                <div>
-                  <select
-                    value={Array.isArray(localValue) ? localValue[0] : ""}
-                    onChange={(e) => handleValueChange([e.target.value])}
-                    onBlur={handleUpdate}
-                    className="w-full px-3 py-2 border border-neutral-400 rounded bg-white text-dark text-sm focus:outline-none focus:ring-2 focus:ring-current focus:ring-opacity-50"
-                    autoFocus
-                  >
-                    <option value="">Select an option...</option>
-                    {block.options?.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <select
+                  value={Array.isArray(localValue) ? localValue[0] : ""}
+                  onChange={(e) => handleValueChange([e.target.value])}
+                  className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg bg-light-secondary text-dark text-xs focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
+                  autoFocus
+                >
+                  <option value="">Select an option...</option>
+                  {block.options?.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
               )}
+
+              {/* Save action */}
+              <button
+                onClick={handleUpdate}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-primary-500 text-dark rounded-lg text-xs font-semibold hover:bg-primary-400 transition-colors"
+              >
+                <MdCheck className="text-sm" />
+                Save
+              </button>
             </div>
           ) : (
-            <div className="text-sm text-neutral-700 truncate">
-              {localValue ? (
-                String(localValue).substring(0, 50)
+            /* ── Value Preview ──────────────────────────── */
+            <div className="mt-1 pb-1 border-b border-neutral-200 min-h-[20px]">
+              {displayValue ? (
+                <p className="text-xs text-dark truncate">{displayValue}</p>
               ) : (
-                <span className="italic text-neutral-400">No value</span>
+                <p className="text-xs text-neutral-400 italic">No value</p>
               )}
             </div>
           )}
-
-          {/* Footer */}
-          <div className="flex gap-2 mt-3 pt-3 border-t border-current border-opacity-20">
-            {isExpanded && (
-              <>
-                <button
-                  onClick={handleUpdate}
-                  className="flex-1 px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors"
-                >
-                  Save
-                </button>
-                {onRemove && (
-                  <button
-                    onClick={() => onRemove(block.id)}
-                    className="px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
-                  >
-                    Remove
-                  </button>
-                )}
-              </>
-            )}
-          </div>
         </div>
       )}
     </Draggable>

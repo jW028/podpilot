@@ -19,7 +19,7 @@ interface SidebarProps {
 
 const sidebarStyles = {
   container:
-    "w-60 border-r border-neutral-300 flex flex-col h-full overflow-y-auto",
+    "w-60 border-r border-neutral-300 flex flex-col h-full overflow-y-auto fixed",
   header: "px-4 border-b border-neutral-300",
   businessSwitcher: "p-3",
   businessPill:

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { Product } from "@/lib/types";
 import Image from "next/image";
@@ -31,14 +31,36 @@ const ProductCard = ({ product, businessId, onDelete }: ProductCardProps) => {
     }
   };
 
+  const [onHover, setOnHover] = useState("");
+
   return (
     <Link href={`/business/${businessId}/products/${product.id}`}>
-      <div className="border rounded-xl border-neutral-300">
-        <div className="p-5 border-b border-neutral-300">test</div>
-        <div className="p-5 bg-light">
-          <h1>{product.title}</h1>
-          <p>{product.description}</p>
-          <p>${product.price.toFixed(2)}</p>
+      <div
+        className={`border font-sans rounded-xl transition-colors  ${onHover === product.id ? "border-primary-500 shadow" : "border-neutral-300"}`}
+        onMouseEnter={() => setOnHover(product.id)}
+        onMouseLeave={() => setOnHover("")}
+      >
+        {/* TODO: convert to image */}
+        <div className="p-5 border-b border-neutral-300 rounded-t-xl h-36"></div>
+
+        {/* description */}
+        <div className="p-4 space-y-2 bg-light rounded-b-xl">
+          <div className="space-y-0.5">
+            <h1 className="text-xs font-semibold">{product.title}</h1>
+            <p className="text-[12px] text-neutral-500">
+              {product.description}
+            </p>
+          </div>
+          <div className="flex justify-between">
+            <p className="text-sm font-semibold">
+              $ {product.price.toFixed(2)}
+            </p>
+            <span
+              className={`px-2 py-0.5 rounded-md text-[10px] font-light ${getStatusColor(product.status)}`}
+            >
+              {product.status}
+            </span>
+          </div>
         </div>
       </div>
     </Link>
