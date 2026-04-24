@@ -1,53 +1,43 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useFinanceAgent } from "@/hooks/useFinanceAgent";
 
-interface MetricCardProps {
-  label: string;
-  value: string;
-  delta: string;
-  highlight?: boolean;
-  sub?: string;
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface Summary {
+  total_orders: number;
+  total_revenue: string;
+  total_costs: string;
+  total_profit: string;
+  overall_margin_pct: string;
 }
 
-const MetricCard = ({
-  label,
-  value,
-  delta,
-  highlight,
-  sub,
-}: MetricCardProps) => (
-  <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-[12px] p-[16px_18px]">
-    <div className="text-[11px] text-[#6B6A64] uppercase tracking-[0.06em] mb-[6px]">
-      {label}
-    </div>
-    <div className="font-serif text-[26px] text-[#141412] leading-[1.1]">
-      {value}
-    </div>
-    <div
-      className={`text-[11px] mt-[4px] ${highlight ? "text-[#C0584A]" : "text-[#4A8C5C]"}`}
-    >
-      {delta}
-    </div>
-    {sub && <div className="hidden">{sub}</div>}
-  </div>
-);
+interface ProductRow {
+  product_id: string;
+  title: string;
+  units_sold: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin_pct: string;
+}
 
-interface SignalBadgeProps {
+interface Signal {
+  type: string;
   action: string;
+  product_id: string;
+  product_name: string;
+  reason: string;
+  priority: string;
 }
 
-const SignalBadge = ({ action }: SignalBadgeProps) => {
-  if (action === "REPRICE") return <span>🟡</span>;
-  if (action === "RETIRE") return <span>🔴</span>;
-  return <span>🟢</span>;
-};
-
-// ── Main component ───────────────────────────────────────────────────────────
-
-interface FinancePageProps {
-  businessId: string;
+interface ChartPoint {
+  month: string;
+  revenue: number;
+  isCurrent: boolean;
 }
 
 interface ChatMessage {
@@ -55,62 +45,292 @@ interface ChatMessage {
   text: string;
 }
 
-const FinancePage = ({ businessId }: FinancePageProps) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Format a number string as RM currency */
+function rm(value: string | number | undefined): string {
+  if (value === undefined || value === null || value === "") return "—";
+  const n = typeof value === "string" ? parseFloat(value) : value;
+  if (isNaN(n)) return "—";
+  return `RM ${n.toFixed(2)}`;
+}
+
+/** Format a percentage string */
+function pct(value: string | undefined): string {
+  if (!value) return "—";
+  return `${parseFloat(value).toFixed(1)}%`;
+}
+
+/** Get the current month + year label */
+function currentMonthLabel(): string {
+  return new Date().toLocaleString("en-MY", { month: "long", year: "numeric" });
+}
+
+/** Compute delta between last two chart points */
+function computeDelta(chartData: ChartPoint[]): string | null {
+  if (chartData.length < 2) return null;
+  const current = chartData[chartData.length - 1].revenue;
+  const previous = chartData[chartData.length - 2].revenue;
+  if (previous === 0) return null;
+  const pctChange = ((current - previous) / previous) * 100;
+  const sign = pctChange >= 0 ? "↑" : "↓";
+  const prevMonth = chartData[chartData.length - 2].month;
+  return `${sign} ${Math.abs(pctChange).toFixed(1)}% vs ${prevMonth}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────────────────────
+
+function MetricCard({
+  label,
+  value,
+  delta,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  delta: string | null;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-[12px] p-[16px_18px]">
+      <div className="text-[11px] text-[#6B6A64] uppercase tracking-[0.06em] mb-[6px]">
+        {label}
+      </div>
+      <div className="font-serif text-[26px] text-[#141412] leading-[1.1]">{value}</div>
+      {delta ? (
+        <div
+          className={`text-[11px] mt-[4px] ${
+            highlight
+              ? delta.startsWith("↑") ? "text-[#C0584A]" : "text-[#4A8C5C]"
+              : delta.startsWith("↑") ? "text-[#4A8C5C]" : "text-[#C0584A]"
+          }`}
+        >
+          {delta}
+        </div>
+      ) : (
+        <div className="text-[11px] mt-[4px] text-[#C4C3BC]">No prior period data</div>
+      )}
+    </div>
+  );
+}
+
+function SignalIcon({ action }: { action: string }) {
+  const upper = action.toUpperCase();
+  if (upper === "REPRICE") return (
+    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#FEF3C7] text-[#D97706] text-[10px] font-bold">↑</span>
+  );
+  if (upper === "RETIRE") return (
+    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#FEE2E2] text-[#C0584A] text-[10px] font-bold">✕</span>
+  );
+  // BOOST
+  return (
+    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#D1FAE5] text-[#2D7A4F] text-[10px] font-bold">★</span>
+  );
+}
+
+function RevenueChart({ chartData }: { chartData: ChartPoint[] }) {
+  if (chartData.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-[12px] text-[#6B6A64]">No revenue history yet.</p>
+      </div>
+    );
+  }
+
+  const CHART_HEIGHT = 110; // px
+  const maxRevenue = Math.max(...chartData.map((d) => d.revenue), 1);
+
+  return (
+    <>
+      <div className="flex items-end gap-[4px] mt-[10px]" style={{ height: `${CHART_HEIGHT}px` }}>
+        {chartData.map((point, i) => {
+          const barHeightPx = Math.max((point.revenue / maxRevenue) * CHART_HEIGHT, 4);
+          return (
+            <div key={i} className="flex-1 relative group" style={{ height: `${CHART_HEIGHT}px` }}>
+              {/* Tooltip */}
+              <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:flex bg-[#141412] text-[#FAFAF8] text-[10px] px-[6px] py-[3px] rounded-[4px] whitespace-nowrap z-10">
+                {rm(point.revenue)}
+              </div>
+              {/* Bar — absolutely positioned from bottom */}
+              <div
+                className={`absolute bottom-0 left-0 right-0 rounded-[4px_4px_0_0] transition-all ${
+                  point.isCurrent
+                    ? "bg-gradient-to-t from-[#141412] to-[#2A2A27]"
+                    : "bg-gradient-to-t from-[#9E7A2E] to-[#C9A84C] opacity-60 group-hover:opacity-80"
+                }`}
+                style={{ height: `${barHeightPx}px` }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-[4px] mt-[8px]">
+        {chartData.map((point, i) => (
+          <div
+            key={i}
+            className={`flex-1 text-center text-[10px] ${
+              point.isCurrent ? "font-semibold text-[#141412]" : "text-[#6B6A64]"
+            }`}
+          >
+            {point.month}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function FinancePage({ businessId }: { businessId: string }) {
   const { data, loading, error, runAnalysis } = useFinanceAgent(businessId);
   const [days] = useState(30);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [hasInitialData, setHasInitialData] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Run on mount
   useEffect(() => {
     if (businessId) runAnalysis({ days });
   }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Push AI insights into chat when data arrives
   useEffect(() => {
     if (data?.insights) {
-      setMessages((prev) => [...prev, { role: "ai", text: data.insights }]);
-      setHasInitialData(true);
+      setMessages((prev) => {
+        // Don't duplicate if same insights already in chat
+        if (prev.some((m) => m.role === "ai" && m.text === data.insights)) return prev;
+        return [...prev, { role: "ai", text: data.insights }];
+      });
     }
-  }, [data]);
+  }, [data?.insights]);
 
+  // Auto-scroll chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const summary = data?.metrics?.summary;
-  const products = data?.metrics?.by_product ?? [];
-  const signals = data?.signals ?? [];
-
-  const handleSend = () => {
+  const handleSend = useCallback(() => {
     if (!chatInput.trim() || loading) return;
     setMessages((prev) => [...prev, { role: "user", text: chatInput }]);
     runAnalysis({ days, userMessage: chatInput });
     setChatInput("");
-  };
+  }, [chatInput, days, loading, runAnalysis]);
 
+  // ── Derived data ────────────────────────────────────────────────────────
+  const summary: Summary | undefined = data?.metrics?.summary;
+  const products: ProductRow[] = data?.metrics?.by_product ?? [];
+  const signals: Signal[] = data?.signals ?? [];
+  const chartData: ChartPoint[] = data?.chartData ?? [];
+  const businessName: string = data?.businessName ?? "your store";
+  const marketplace: string = data?.marketplace ?? "";
+  const hasData = !!summary;
+
+  // Compute deltas from chart history
+  const revenueDelta = computeDelta(chartData);
+
+  // Cost delta (inverse: up = bad)
+  const costDeltaRaw = chartData.length >= 2
+    ? ((chartData[chartData.length - 1].revenue - chartData[chartData.length - 2].revenue) /
+        Math.max(chartData[chartData.length - 2].revenue, 1)) * 100
+    : null;
+
+  // ── Export CSV ─────────────────────────────────────────────────────────
+  const handleExportCSV = useCallback(() => {
+    if (products.length === 0) return;
+    const headers = ["Product", "Units Sold", "Revenue (RM)", "Cost (RM)", "Profit (RM)", "Margin (%)"];
+    const rows = products.map((p) => [
+      `"${p.title}"`,
+      p.units_sold,
+      p.revenue.toFixed(2),
+      p.cost.toFixed(2),
+      p.profit.toFixed(2),
+      p.margin_pct,
+    ]);
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `finance-${businessId}-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [products, businessId]);
+
+  // ── Generate Report ─────────────────────────────────────────────────────
+  const handleGenerateReport = useCallback(async () => {
+    if (!hasData || reportLoading) return;
+    setReportLoading(true);
+    try {
+      const res = await fetch('/api/agents/finance/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessId, days }),
+      });
+      if (!res.ok) throw new Error('Report generation failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `finance-report-${businessId}-${new Date().toISOString().split('T')[0]}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('[FinancePage] Report generation error:', err.message);
+      alert('Report generation failed. Please try again.');
+    } finally {
+      setReportLoading(false);
+    }
+  }, [hasData, reportLoading, businessId, days]);
+
+  // ── Render ──────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ── TOPBAR ─────────────────────────────────────────────────────── */}
+      {/* ── TOPBAR ───────────────────────────────────────────────────── */}
       <div className="p-[16px_28px] flex items-center justify-between border-b border-[#E8E7E2] bg-[#FAFAF8] sticky top-0 z-10 shrink-0">
         <div>
           <div className="font-serif text-[20px]">Finance</div>
           <div className="text-[12px] text-[#6B6A64] mt-[1px]">
-            AI-powered profit analysis · MokiPrints
+            {hasData
+              ? `AI-powered profit analysis · ${businessName}`
+              : "AI-powered profit analysis"}
           </div>
         </div>
         <div className="flex items-center gap-[8px]">
-          <button className="px-[16px] py-[8px] rounded-[8px] border border-[#E8E7E2] bg-transparent text-[#6B6A64] hover:bg-[#F4F3EF] hover:text-[#141412] text-[13px] font-medium transition cursor-pointer">
-            Export CSV
+          <button
+            onClick={handleExportCSV}
+            disabled={products.length === 0}
+            className="px-[16px] py-[8px] rounded-[8px] border border-[#E8E7E2] bg-transparent text-[#6B6A64] hover:bg-[#F4F3EF] hover:text-[#141412] disabled:opacity-40 disabled:cursor-not-allowed text-[13px] font-medium transition cursor-pointer"
+          >
+            Export Products CSV
           </button>
-          <button className="px-[16px] py-[8px] rounded-[8px] border-none bg-[#C9A84C] hover:bg-[#9E7A2E] text-[#FAFAF8] text-[13px] font-medium transition cursor-pointer flex items-center gap-[6px]">
-            ✦ Generate Report
+          <button
+            onClick={handleGenerateReport}
+            disabled={!hasData || reportLoading}
+            className="px-[16px] py-[8px] rounded-[8px] border-none bg-[#C9A84C] hover:bg-[#9E7A2E] disabled:opacity-40 disabled:cursor-not-allowed text-[#FAFAF8] text-[13px] font-medium transition cursor-pointer flex items-center gap-[6px]"
+          >
+            {reportLoading ? (
+              <>
+                <div className="w-[12px] h-[12px] border-[2px] border-[#FAFAF8] border-t-transparent rounded-full animate-spin" />
+                Generating…
+              </>
+            ) : (
+              '✦ Generate Report'
+            )}
           </button>
         </div>
       </div>
 
-      {/* ── CONTENT ────────────────────────────────────────────────────── */}
-      <div className="p-[24px_28px] max-w-6xl w-full">
+      {/* ── CONTENT ──────────────────────────────────────────────────── */}
+      <div className="p-[24px_28px] w-full max-w-6xl">
+
         {/* Error banner */}
         {error && (
           <div className="bg-[#C0584A]/10 border border-[#C0584A]/20 text-[#C0584A] rounded-[12px] px-[20px] py-[16px] text-[14px] font-medium mb-[20px]">
@@ -118,94 +338,80 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
           </div>
         )}
 
-        {/* Loading state — first load only */}
-        {!hasInitialData && loading && (
+        {/* First-load spinner */}
+        {!hasData && loading && (
           <div className="h-[400px] flex flex-col items-center justify-center text-[14px] text-[#6B6A64]">
             <div className="w-[24px] h-[24px] border-[2px] border-[#C9A84C] border-t-transparent rounded-full animate-spin mb-[12px]" />
-            Analyzing MokiPrints financial data...
+            Analysing {businessName} financial data…
           </div>
         )}
 
-        {/* Main content — shown once we have data */}
-        {hasInitialData && (
+        {/* No data + no error + not loading */}
+        {!hasData && !loading && !error && (
+          <div className="h-[400px] flex flex-col items-center justify-center text-center gap-[8px]">
+            <div className="text-[32px] opacity-30">◈</div>
+            <p className="text-[14px] font-medium text-[#141412]">No financial data yet</p>
+            <p className="text-[12px] text-[#6B6A64] max-w-[320px]">
+              Connect Printify and fulfil at least one order to start seeing analysis here.
+            </p>
+          </div>
+        )}
+
+        {hasData && (
           <>
-            {/* METRIC CARDS */}
+            {/* ── METRIC CARDS ────────────────────────────────────────── */}
             <div className="grid grid-cols-4 gap-[12px] mb-[20px]">
               <MetricCard
-                label="REVENUE (APR)"
-                value={
-                  summary?.total_revenue ? `RM ${summary.total_revenue}` : "—"
-                }
-                delta="↑ 23% vs March"
+                label={`REVENUE (${new Date().toLocaleString("en-MY", { month: "short" }).toUpperCase()})`}
+                value={rm(summary?.total_revenue)}
+                delta={revenueDelta}
               />
               <MetricCard
                 label="PRINTIFY COSTS"
-                value={summary?.total_costs ? `RM ${summary.total_costs}` : "—"}
-                delta="↑ 12% vs March"
+                value={rm(summary?.total_costs)}
+                delta={
+                  costDeltaRaw !== null
+                    ? `${costDeltaRaw >= 0 ? "↑" : "↓"} ${Math.abs(costDeltaRaw).toFixed(1)}% vs ${chartData[chartData.length - 2]?.month ?? "prev"}`
+                    : null
+                }
                 highlight
               />
               <MetricCard
                 label="NET PROFIT"
-                value={
-                  summary?.total_profit ? `RM ${summary.total_profit}` : "—"
-                }
-                delta="↑ 31% vs March"
+                value={rm(summary?.total_profit)}
+                delta={revenueDelta}
               />
               <MetricCard
                 label="MARGIN"
-                value={
-                  summary?.overall_margin_pct
-                    ? `${summary.overall_margin_pct}%`
-                    : "—"
+                value={pct(summary?.overall_margin_pct)}
+                delta={
+                  chartData.length >= 2
+                    ? (() => {
+                        const cur = parseFloat(summary?.overall_margin_pct ?? "0");
+                        // We don't have margin history, so show vs prev revenue as proxy
+                        return `${cur >= 30 ? "Healthy" : "Below target"} · target 30%+`;
+                      })()
+                    : null
                 }
-                delta="↑ 4.2pts"
               />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px]">
-              {/* ── LEFT: CHART + SIGNALS ─────────────────────────────── */}
+
+              {/* ── LEFT: CHART + SIGNALS ──────────────────────────── */}
               <div className="flex flex-col gap-[16px]">
                 {/* Revenue chart */}
-                <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-[12px] p-[20px] h-[190px] flex flex-col">
-                  <div className="font-serif text-[16px] text-[#141412] mb-[12px]">
+                <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-[12px] p-[20px] h-[220px] flex flex-col">
+                  <div className="font-serif text-[16px] text-[#141412] mb-[4px]">
                     Monthly Revenue
                   </div>
-                  <div className="flex items-end gap-[4px] flex-1 mt-[10px]">
-                    {[
-                      45,
-                      55,
-                      48,
-                      62,
-                      58,
-                      70,
-                      parseFloat(summary?.overall_margin_pct) || 82,
-                    ].map((h, i) => (
-                      <div
-                        key={i}
-                        className={`flex-1 rounded-[4px_4px_0_0] transition-opacity delay-75 ${
-                          i === 6
-                            ? "bg-gradient-to-t from-[#141412] to-[#2A2A27]"
-                            : "bg-gradient-to-t from-[#9E7A2E] to-[#C9A84C] opacity-60"
-                        }`}
-                        style={{ height: `${h}%` }}
-                      />
-                    ))}
+                  <div className="text-[11px] text-[#6B6A64] mb-[8px]">
+                    {chartData.length > 0
+                      ? `Last ${chartData.length} months · ${marketplace ? marketplace.charAt(0).toUpperCase() + marketplace.slice(1) : "all channels"}`
+                      : "No history available"}
                   </div>
-                  <div className="flex gap-[4px] mt-[12px]">
-                    {["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"].map(
-                      (m, i) => (
-                        <div
-                          key={m}
-                          className={`flex-1 text-center text-[10px] ${
-                            i === 6
-                              ? "font-semibold text-[#141412]"
-                              : "text-[#6B6A64]"
-                          }`}
-                        >
-                          {m}
-                        </div>
-                      ),
-                    )}
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <RevenueChart chartData={chartData} />
                   </div>
                 </div>
 
@@ -213,107 +419,113 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
                 <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-[12px] p-[20px] flex-1 min-h-[160px] overflow-hidden flex flex-col">
                   <div className="font-serif text-[16px] text-[#141412] mb-[12px] flex items-center justify-between">
                     ◈ Agent Signals
-                    <div className="text-[10px] text-[#6B6A64] font-sans font-normal border border-[#E8E7E2] rounded-full px-[8px] py-[2px] bg-[#F4F3EF]">
-                      Auto-updated
+                    <div className="flex items-center gap-[6px]">
+                      {signals.length > 0 && (
+                        <span className="bg-[#C9A84C] text-[#FAFAF8] text-[9px] font-semibold px-[6px] py-[2px] rounded-full">
+                          {signals.length}
+                        </span>
+                      )}
+                      <div className="text-[10px] text-[#6B6A64] font-sans font-normal border border-[#E8E7E2] rounded-full px-[8px] py-[2px] bg-[#F4F3EF]">
+                        Auto-updated
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-[12px] overflow-y-auto flex-1 pr-2 [&::-webkit-scrollbar]:w-[4px] [&::-webkit-scrollbar-thumb]:bg-[#E8E7E2] [&::-webkit-scrollbar-thumb]:rounded-full">
-                    {signals.length > 0 ? (
-                      signals.map((sig: any, idx: number) => (
+
+                  {signals.length > 0 ? (
+                    <div className="flex flex-col gap-[10px] overflow-y-auto flex-1 pr-1 [&::-webkit-scrollbar]:w-[4px] [&::-webkit-scrollbar-thumb]:bg-[#E8E7E2] [&::-webkit-scrollbar-thumb]:rounded-full">
+                      {signals.map((sig, idx) => (
                         <div
                           key={idx}
-                          className="flex gap-[12px] items-start p-[10px] bg-[#F4F3EF] rounded-[8px]"
+                          className="flex gap-[10px] items-start p-[10px_12px] bg-[#F4F3EF] rounded-[8px]"
                         >
-                          <div className="text-[16px] leading-none mt-[2px] w-[20px] text-center">
-                            <SignalBadge action={sig.action} />
+                          <div className="mt-[2px] shrink-0">
+                            <SignalIcon action={sig.action} />
                           </div>
-                          <div>
-                            <div className="text-[12px] font-semibold text-[#141412]">
-                              {sig.action}
-                              <span className="font-medium text-[#6B6A64] mx-[4px]">
-                                •
+                          <div className="min-w-0">
+                            <div className="text-[12px] font-semibold text-[#141412] flex items-center gap-[6px] flex-wrap">
+                              <span className={`text-[10px] font-bold px-[6px] py-[1px] rounded-[4px] ${
+                                sig.action.toUpperCase() === "BOOST"   ? "bg-[#D1FAE5] text-[#2D7A4F]" :
+                                sig.action.toUpperCase() === "REPRICE" ? "bg-[#FEF3C7] text-[#D97706]" :
+                                                                          "bg-[#FEE2E2] text-[#C0584A]"
+                              }`}>
+                                {sig.action.toUpperCase()}
                               </span>
-                              <span className="font-medium text-[#141412]">
-                                {sig.product_name ?? "Product"}
-                              </span>
+                              <span className="truncate">{sig.product_name}</span>
+                              {sig.priority === "HIGH" && (
+                                <span className="text-[9px] text-[#C0584A] font-medium">● HIGH</span>
+                              )}
                             </div>
-                            <div className="text-[11px] text-[#6B6A64] mt-[4px] leading-snug">
-                              {sig.reason ??
-                                "Margin threshold triggered based on recent sales."}
+                            <div className="text-[11px] text-[#6B6A64] mt-[3px] leading-snug">
+                              {sig.reason}
                             </div>
                           </div>
                         </div>
-                      ))
-                    ) : (
-                      <div className="text-[12px] text-[#6B6A64] flex items-center justify-center flex-1 h-full">
-                        No active signals at the moment.
-                      </div>
-                    )}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-[6px] py-[20px]">
+                      <div className="text-[22px] opacity-20">◈</div>
+                      <p className="text-[12px] text-[#6B6A64]">No active signals at the moment.</p>
+                      <p className="text-[11px] text-[#C4C3BC]">Signals appear when margin thresholds are breached.</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* ── RIGHT: FINANCE AGENT CHAT ─────────────────────────── */}
-              <div className="bg-[#2A2A27] text-[#FAFAF8] rounded-[12px] p-[20px] flex flex-col h-[366px] shadow-[0_4px_20px_rgba(20,20,18,0.15)]">
-                <div className="flex items-center gap-[10px] pb-[16px] shrink-0">
-                  <span className="text-[#FAFAF8] text-[18px] opacity-70">
-                    ◈
-                  </span>
+              {/* ── RIGHT: FINANCE AGENT CHAT ──────────────────────── */}
+              <div className="bg-[#2A2A27] text-[#FAFAF8] rounded-[12px] p-[20px] flex flex-col h-[420px] shadow-[0_4px_20px_rgba(20,20,18,0.15)]">
+                {/* Header */}
+                <div className="flex items-center gap-[10px] pb-[14px] border-b border-[#FAFAF8]/10 shrink-0">
+                  <div className="w-[30px] h-[30px] rounded-[8px] bg-[#C9A84C] flex items-center justify-center shrink-0">
+                    <span className="text-[12px] font-bold text-[#FAFAF8]">◈</span>
+                  </div>
                   <div>
-                    <div className="text-[13px] font-semibold mt-[-2px]">
-                      Finance Agent
-                    </div>
-                    <div className="text-[10px] text-[#FAFAF8]/50 mt-[1px]">
-                      April 2026 insights &amp; dialogue
+                    <div className="text-[13px] font-semibold">Finance Agent</div>
+                    <div className="text-[10px] text-[#FAFAF8]/40 mt-[1px]">
+                      {currentMonthLabel()} · {businessName}
                     </div>
                   </div>
+                  {loading && (
+                    <div className="ml-auto flex items-center gap-[4px]">
+                      <div className="w-[4px] h-[4px] bg-[#C9A84C] rounded-full animate-bounce" />
+                      <div className="w-[4px] h-[4px] bg-[#C9A84C] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <div className="w-[4px] h-[4px] bg-[#C9A84C] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </div>
+                  )}
                 </div>
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto pr-[4px] flex flex-col gap-[12px] pb-[10px] [&::-webkit-scrollbar]:w-[4px] [&::-webkit-scrollbar-thumb]:bg-[#FAFAF8]/20 [&::-webkit-scrollbar-thumb]:rounded-full">
+                <div className="flex-1 overflow-y-auto py-[14px] flex flex-col gap-[12px] [&::-webkit-scrollbar]:w-[4px] [&::-webkit-scrollbar-thumb]:bg-[#FAFAF8]/15 [&::-webkit-scrollbar-thumb]:rounded-full">
+                  {messages.length === 0 && !loading && (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-[6px] text-center px-[20px]">
+                      <div className="text-[28px] opacity-20">◈</div>
+                      <p className="text-[12px] text-[#FAFAF8]/40">
+                        Finance Agent is ready. Ask about margins, signals, or product performance.
+                      </p>
+                    </div>
+                  )}
+
                   {messages.map((msg, i) => (
-                    <div
-                      key={i}
-                      className={`flex gap-[10px] ${msg.role === "user" ? "flex-row-reverse" : ""}`}
-                    >
-                      {msg.role === "ai" ? (
-                        <div className="w-[24px] h-[24px] rounded-full bg-[#141412] flex items-center justify-center text-[9px] shrink-0 font-semibold">
-                          FA
-                        </div>
-                      ) : (
-                        <div className="w-[24px] h-[24px] rounded-full bg-[#C9A84C] flex items-center justify-center text-[9px] shrink-0 font-semibold text-[#FAFAF8]">
-                          U
-                        </div>
-                      )}
-                      <div
-                        className={`p-[12px_16px] text-[13px] leading-relaxed max-w-[85%] whitespace-pre-line ${
-                          msg.role === "ai"
-                            ? "bg-[#FAFAF8] text-[#141412] rounded-[2px_10px_10px_10px]"
-                            : "bg-[#141412] text-[#FAFAF8] border border-[#141412] rounded-[10px_2px_10px_10px]"
-                        }`}
-                      >
+                    <div key={i} className={`flex gap-[8px] ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                      <div className={`w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9px] shrink-0 font-semibold ${
+                        msg.role === "ai" ? "bg-[#C9A84C] text-[#FAFAF8]" : "bg-[#FAFAF8]/20 text-[#FAFAF8]"
+                      }`}>
+                        {msg.role === "ai" ? "FA" : "U"}
+                      </div>
+                      <div className={`px-[12px] py-[10px] text-[13px] leading-relaxed max-w-[85%] whitespace-pre-line rounded-[2px] ${
+                        msg.role === "ai"
+                          ? "bg-[#FAFAF8] text-[#141412] rounded-tr-[10px] rounded-br-[10px] rounded-bl-[10px]"
+                          : "bg-[#141412]/60 text-[#FAFAF8] rounded-tl-[10px] rounded-br-[10px] rounded-bl-[10px]"
+                      }`}>
                         {msg.text}
-                        {msg.role === "ai" && i === 0 && (
-                          <div className="flex gap-[8px] mt-[12px] pt-[12px] border-t border-[#E8E7E2]">
-                            <button className="bg-[#C9A84C] text-[#FAFAF8] border-none px-[12px] py-[6px] rounded-[6px] text-[11px] font-medium cursor-pointer hover:bg-[#9E7A2E]">
-                              Apply suggestions
-                            </button>
-                            <button className="bg-transparent border border-[#E8E7E2] text-[#141412] px-[12px] py-[6px] rounded-[6px] text-[11px] font-medium hover:bg-[#F4F3EF] cursor-pointer transition">
-                              Full report
-                            </button>
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))}
 
-                  {/* Typing indicator */}
-                  {loading && (
-                    <div className="flex gap-[10px]">
-                      <div className="w-[24px] h-[24px] rounded-full bg-[#141412] flex items-center justify-center text-[9px] shrink-0 font-semibold">
-                        FA
-                      </div>
-                      <div className="p-[12px_16px] bg-[#FAFAF8] rounded-[2px_10px_10px_10px] flex items-center gap-[4px] h-[40px]">
+                  {loading && messages.length > 0 && (
+                    <div className="flex gap-[8px]">
+                      <div className="w-[22px] h-[22px] rounded-full bg-[#C9A84C] flex items-center justify-center text-[9px] shrink-0 font-semibold">FA</div>
+                      <div className="px-[12px] py-[10px] bg-[#FAFAF8] rounded-[2px_10px_10px_10px] flex items-center gap-[4px]">
                         <div className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce" />
                         <div
                           className="w-[4px] h-[4px] bg-[#2A2A27] rounded-full animate-bounce"
@@ -330,51 +542,41 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
                 </div>
 
                 {/* Input */}
-                <div className="mt-auto pt-[16px] shrink-0 border-t border-[#FAFAF8]/10">
-                  <div className="flex items-center gap-[8px] p-[6px_10px] bg-[#141412] border border-[#FAFAF8]/20 focus-within:border-[#C9A84C] rounded-[8px] transition">
+                <div className="shrink-0 border-t border-[#FAFAF8]/10 pt-[12px]">
+                  <div className="flex items-center gap-[8px] p-[6px_10px] bg-[#141412] border border-[#FAFAF8]/15 focus-within:border-[#C9A84C] rounded-[8px] transition">
                     <input
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                      placeholder="Ask Finance Agent..."
-                      className="flex-1 bg-transparent border-none outline-none text-[#FAFAF8] text-[13px] placeholder:text-[#FAFAF8]/30 px-[4px]"
+                      onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+                      placeholder={`Ask about ${businessName}…`}
+                      className="flex-1 bg-transparent border-none outline-none text-[#FAFAF8] text-[13px] placeholder:text-[#FAFAF8]/25 px-[4px]"
                     />
                     <button
                       onClick={handleSend}
-                      disabled={loading}
-                      className="w-[28px] h-[28px] bg-[#FAFAF8]/10 hover:bg-[#C9A84C] disabled:bg-[#FAFAF8]/5 disabled:cursor-not-allowed rounded-[6px] border-none flex items-center justify-center cursor-pointer transition"
+                      disabled={loading || !chatInput.trim()}
+                      className="w-[28px] h-[28px] bg-[#FAFAF8]/10 hover:bg-[#C9A84C] disabled:opacity-30 disabled:cursor-not-allowed rounded-[6px] border-none flex items-center justify-center cursor-pointer transition"
                     >
-                      <span className="text-[16px] leading-none mb-[2px] text-[#FAFAF8]">
-                        ↑
-                      </span>
+                      <span className="text-[14px] text-[#FAFAF8]">↑</span>
                     </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* ── RECENT ORDERS TABLE ──────────────────────────────────── */}
+            {/* ── PRODUCT PERFORMANCE TABLE ─────────────────────────── */}
             <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-[12px] mt-[16px] overflow-hidden">
-              <div className="font-serif text-[16px] text-[#141412] px-[20px] py-[18px] border-b border-[#E8E7E2]">
-                Recent Orders
+              <div className="px-[20px] py-[16px] border-b border-[#E8E7E2] flex items-center justify-between">
+                <div className="font-serif text-[16px] text-[#141412]">Product Performance</div>
+                <div className="text-[11px] text-[#6B6A64]">
+                  {summary?.total_orders ?? 0} total orders · last {days} days
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr>
-                      {[
-                        "Order",
-                        "Product",
-                        "Platform",
-                        "Revenue",
-                        "Cost",
-                        "Profit",
-                        "Date",
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="text-left px-[20px] py-[12px] text-[10px] font-semibold text-[#6B6A64] uppercase tracking-[0.06em] border-b border-[#E8E7E2]"
-                        >
+                    <tr className="border-b border-[#E8E7E2]">
+                      {["Product", "Units Sold", "Revenue", "Printify Cost", "Profit", "Margin", "Signal"].map((h) => (
+                        <th key={h} className="text-left px-[20px] py-[10px] text-[10px] font-semibold text-[#6B6A64] uppercase tracking-[0.06em]">
                           {h}
                         </th>
                       ))}
@@ -382,45 +584,63 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
                   </thead>
                   <tbody>
                     {products.length > 0 ? (
-                      products.map((p: any) => (
-                        <tr
-                          key={p.product_id}
-                          className="hover:bg-[#F4F3EF] border-b border-[#E8E7E2] last:border-b-0"
-                        >
-                          <td className="px-[20px] py-[12px] text-[13px]">
-                            #{p.product_id?.slice(-4) ?? "—"}
-                          </td>
-                          <td className="px-[20px] py-[12px] text-[13px] font-medium text-[#141412] truncate max-w-[180px]">
-                            {p.title}
-                          </td>
-                          <td className="px-[20px] py-[12px] text-[13px] text-[#6B6A64]">
-                            Shopee
-                          </td>
-                          <td className="px-[20px] py-[12px] text-[13px]">
-                            RM {p.revenue.toFixed(2)}
-                          </td>
-                          <td className="px-[20px] py-[12px] text-[13px] text-[#6B6A64]">
-                            RM {p.cost.toFixed(2)}
-                          </td>
-                          <td
-                            className={`px-[20px] py-[12px] text-[13px] font-semibold ${
-                              p.profit < 0 ? "text-[#C0584A]" : "text-[#2D7A4F]"
-                            }`}
-                          >
-                            RM {p.profit.toFixed(2)}
-                          </td>
-                          <td className="px-[20px] py-[12px] text-[13px] text-[#6B6A64]">
-                            22 Apr
-                          </td>
-                        </tr>
-                      ))
+                      products
+                        .sort((a, b) => b.profit - a.profit) // highest profit first
+                        .map((p) => {
+                          const productSignal = signals.find((s) => s.product_id === p.product_id);
+                          const marginNum = parseFloat(p.margin_pct);
+                          return (
+                            <tr key={p.product_id} className="hover:bg-[#F4F3EF] border-b border-[#E8E7E2] last:border-b-0 transition-colors">
+                              <td className="px-[20px] py-[12px] font-medium text-[#141412] text-[13px] max-w-[200px]">
+                                <div className="truncate">{p.title}</div>
+                                <div className="text-[10px] text-[#9E9D97] font-normal">{p.product_id}</div>
+                              </td>
+                              <td className="px-[20px] py-[12px] text-[13px] text-[#6B6A64]">
+                                {p.units_sold}
+                              </td>
+                              <td className="px-[20px] py-[12px] text-[13px]">
+                                {rm(p.revenue)}
+                              </td>
+                              <td className="px-[20px] py-[12px] text-[13px] text-[#6B6A64]">
+                                {rm(p.cost)}
+                              </td>
+                              <td className={`px-[20px] py-[12px] text-[13px] font-semibold ${
+                                p.profit < 0 ? "text-[#C0584A]" : "text-[#2D7A4F]"
+                              }`}>
+                                {rm(p.profit)}
+                              </td>
+                              <td className="px-[20px] py-[12px] text-[13px]">
+                                <span className={`inline-block px-[8px] py-[2px] rounded-full text-[11px] font-semibold ${
+                                  marginNum >= 40 ? "bg-[#D1FAE5] text-[#2D7A4F]" :
+                                  marginNum >= 25 ? "bg-[#FEF3C7] text-[#D97706]" :
+                                                    "bg-[#FEE2E2] text-[#C0584A]"
+                                }`}>
+                                  {pct(p.margin_pct)}
+                                </span>
+                              </td>
+                              <td className="px-[20px] py-[12px] text-[13px]">
+                                {productSignal ? (
+                                  <span className={`inline-flex items-center gap-[4px] text-[11px] font-semibold px-[8px] py-[2px] rounded-full ${
+                                    productSignal.action.toUpperCase() === "BOOST"   ? "bg-[#D1FAE5] text-[#2D7A4F]" :
+                                    productSignal.action.toUpperCase() === "REPRICE" ? "bg-[#FEF3C7] text-[#D97706]" :
+                                                                                        "bg-[#FEE2E2] text-[#C0584A]"
+                                  }`}>
+                                    <SignalIcon action={productSignal.action} />
+                                    {productSignal.action.toUpperCase()}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-[#C4C3BC]">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
                     ) : (
                       <tr>
-                        <td
-                          colSpan={7}
-                          className="px-[20px] py-[16px] text-[13px] text-[#6B6A64] text-center"
-                        >
-                          No order data available yet.
+                        <td colSpan={7} className="px-[20px] py-[24px] text-center">
+                          <div className="text-[24px] opacity-20 mb-[6px]">◈</div>
+                          <p className="text-[13px] text-[#6B6A64]">No product data available yet.</p>
+                          <p className="text-[11px] text-[#C4C3BC] mt-[2px]">Products appear once Printify orders are fulfilled.</p>
                         </td>
                       </tr>
                     )}
@@ -433,6 +653,4 @@ const FinancePage = ({ businessId }: FinancePageProps) => {
       </div>
     </>
   );
-};
-
-export default FinancePage;
+}
