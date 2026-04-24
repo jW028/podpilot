@@ -85,22 +85,24 @@ const MarkdownText = ({ content }: { content: string }) => {
     } else if (orderedMatch) {
       flushBullet();
       orderedBuffer.push(orderedMatch[1]);
-    } else {
-      flushBullet();
-      flushOrdered();
-
-      if (line.trim() === "") {
-        // blank line → small vertical gap
+    } else if (line.trim() === "") {
+      // Blank line: only flush + add gap when NOT inside an active list.
+      // Inside a list, blank lines between items are ignored so items
+      // stay in one <ol>/<ul> and number correctly (1, 2, 3…).
+      if (!bulletBuffer.length && !orderedBuffer.length) {
         if (elements.length > 0) {
           elements.push(<div key={`gap-${index}`} className="h-1" />);
         }
-      } else {
-        elements.push(
-          <p key={`p-${index}`} className="leading-relaxed">
-            {parseInline(line, `p-${index}`)}
-          </p>,
-        );
       }
+    } else {
+      // Real paragraph content — flush any active list first, then add paragraph
+      flushBullet();
+      flushOrdered();
+      elements.push(
+        <p key={`p-${index}`} className="leading-relaxed">
+          {parseInline(line, `p-${index}`)}
+        </p>,
+      );
     }
   });
 

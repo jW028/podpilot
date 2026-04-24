@@ -64,7 +64,7 @@ const fallbackPayload: ChatResponsePayload = {
   frameworkReady: false,
 };
 
-const MAX_TAVILY_CONTEXT_CHARS = 7000;
+const MAX_TAVILY_CONTEXT_CHARS = 2500;
 
 const normalizeText = (value: string) => value.replace(/\s+/g, " ").trim();
 
@@ -112,24 +112,32 @@ const buildResearchTopic = (
   return normalizeText(parts.join(" ")).slice(0, 160);
 };
 
+const TAVILY_TIMEOUT_MS = 6000;
+
 const runTavilyResearch = async (apiKey: string, queries: string[]) => {
   const collected: string[] = [];
 
   for (const query of queries) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TAVILY_TIMEOUT_MS);
+
     try {
       const response = await fetch("https://api.tavily.com/search", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        signal: controller.signal,
         body: JSON.stringify({
           api_key: apiKey,
           query,
-          max_results: 3,
+          max_results: 2,
           topic: "general",
-          search_depth: "advanced",
+          search_depth: "basic",
         }),
       });
+
+      clearTimeout(timer);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -158,8 +166,17 @@ const runTavilyResearch = async (apiKey: string, queries: string[]) => {
 
       collected.push(`Query: ${query}\n${block}`);
     } catch (error) {
-      console.error(`Tavily search failed for query: ${query}`, error);
-      collected.push(`Query: ${query}\nSearch failed due to network/runtime error.`);
+      clearTimeout(timer);
+      const isTimeout = error instanceof Error && error.name === "AbortError";
+      console.error(
+        isTimeout
+          ? `Tavily timeout (>${TAVILY_TIMEOUT_MS}ms) for query: ${query}`
+          : `Tavily search failed for query: ${query}`,
+        isTimeout ? "" : error,
+      );
+      collected.push(
+        `Query: ${query}\n${isTimeout ? "Search timed out." : "Search failed due to network/runtime error."}`,
+      );
     }
   }
 
@@ -226,7 +243,7 @@ export async function POST(request: Request) {
 
     const latestUserMessage = extractLatestUserMessage(body.messages);
     const researchTopic = buildResearchTopic(latestUserMessage, body.framework);
-    const tavilyQueries = buildTavilyQueries(researchTopic).slice(0, 4);
+    const tavilyQueries = buildTavilyQueries(researchTopic).slice(0, 2);
     const tavilyContext =
       tavilyApiKey && tavilyQueries.length
         ? await runTavilyResearch(tavilyApiKey, tavilyQueries)
@@ -251,7 +268,11 @@ Rules:
 - If idea quality is weak, suggest a sharper angle and ask if the user still wants to proceed.
 - Only set frameworkReady=true when details are complete AND user clearly wants to proceed after discussion.
 
-Return STRICT JSON with this exact shape:
+${externalResearchContext}
+
+OUTPUT RULE — THIS IS MANDATORY:
+You MUST respond with ONLY a raw JSON object. No markdown, no code fences, no explanation outside JSON.
+Exact shape required:
 {
   "reply": "string",
   "frameworkReady": boolean,
@@ -268,14 +289,17 @@ Return STRICT JSON with this exact shape:
     "next30Days": ["string"]
   }
 }
+If framework not ready: frameworkReady=false, framework=null.
+Start your response with { and end with }. Nothing else.`;
 
-If not ready, set frameworkReady=false and framework=null.
-
-${externalResearchContext}`;
+    // Cap history at last 20 messages to avoid context window overflow,
+    // which causes the model to produce malformed JSON → fallback fires.
+    const MAX_HISTORY = 20;
+    const trimmedMessages = body.messages.slice(-MAX_HISTORY);
 
     const messagesForModel = [
       { role: "system", content: systemPrompt },
-      ...body.messages.map((message) => ({
+      ...trimmedMessages.map((message) => ({
         role: message.role,
         content: message.content,
       })),
@@ -292,7 +316,7 @@ ${externalResearchContext}`;
         body: JSON.stringify({
           model,
           temperature: 0.35,
-          response_format: { type: "json_object" },
+          max_tokens: 400,
           messages: messagesForModel,
         }),
       },
@@ -317,6 +341,8 @@ ${externalResearchContext}`;
     };
     const content = completion.choices?.[0]?.message?.content;
 
+    console.log("[chat/route] Raw model content:\n", content ?? "(empty)");
+
     if (!content) {
       return NextResponse.json(
         {
@@ -337,6 +363,11 @@ ${externalResearchContext}`;
       | null;
 
     if (!parsed || typeof parsed.reply !== "string") {
+      console.warn(
+        "[chat/route] JSON parse failed or reply field missing.\n",
+        "parsed:", parsed,
+        "\nraw content was:\n", content,
+      );
       return NextResponse.json(
         {
           success: true,
