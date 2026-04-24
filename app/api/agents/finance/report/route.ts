@@ -102,8 +102,7 @@ export async function POST(request: Request) {
       : '  No active signals.';
 
     // ── Compact prompt ──────────────────────────────────────────────────
-    // Keep token count low to avoid timeout. GLM generates the narrative sections;
-    // we pre-render the data tables in HTML directly (no GLM needed for tables).
+    // GLM generates only the 3 narrative sections as JSON — all data tables rendered by server.
     const glm = getGlmClient();
 
     const completion = await glm.chat.completions.create({
@@ -112,45 +111,53 @@ export async function POST(request: Request) {
         {
           role: 'system',
           content:
-            'You are a financial analyst. Write concise professional analysis for a print-on-demand business report. Respond in plain text only — no HTML, no markdown.',
+            'You are a financial analyst for a print-on-demand business. Respond ONLY with a valid JSON object with exactly 3 string keys: "executive_summary", "key_observations", "strategic_recommendations". No markdown, no HTML, no extra text outside the JSON. Each value is plain text (2-4 sentences). strategic_recommendations must be 4 numbered actions separated by newlines.',
         },
         {
           role: 'user',
           content: `Business: ${businessName} | Marketplace: ${marketplace}
 Revenue: RM ${revenue} | Costs: RM ${costs} | Profit: RM ${profit} | Margin: ${margin}% | Orders: ${orders}
 
-Revenue trend (last ${chartData.length} months):
+Revenue trend:
 ${trendRows}
 
 Products:
 ${productRows}
 
-Agent signals:
+Signals:
 ${signalRows}
 
-Finance Agent insights:
-${insights}
-
-Write the following 3 sections (each 2-4 sentences, professional tone):
-1. EXECUTIVE SUMMARY: Overall business health and key highlights.
-2. KEY OBSERVATIONS: Most important product-level findings.
-3. STRATEGIC RECOMMENDATIONS: 4 specific actions the business should take.`,
+Insights:
+${insights}`,
         },
       ],
-      temperature: 0.5,
-      max_tokens: 600,
+      temperature: 0.3,
+      max_tokens: 700,
     });
 
-    const aiNarrative = completion.choices[0]?.message?.content?.trim() ?? '';
+    // Parse JSON from GLM — strip markdown fences if model wraps in ```json
+    let rawContent = completion.choices[0]?.message?.content?.trim() ?? '{}';
+    rawContent = rawContent
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
 
-    // Parse sections from GLM response
-    const execMatch = aiNarrative.match(/1\.\s*EXECUTIVE SUMMARY[:\s]*([\s\S]*?)(?=2\.|$)/i);
-    const obsMatch  = aiNarrative.match(/2\.\s*KEY OBSERVATIONS[:\s]*([\s\S]*?)(?=3\.|$)/i);
-    const recMatch  = aiNarrative.match(/3\.\s*STRATEGIC RECOMMENDATIONS[:\s]*([\s\S]*?)$/i);
+    let parsed: { executive_summary?: string; key_observations?: string; strategic_recommendations?: string } = {};
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch {
+      // Fallback: use full raw content as executive summary if JSON parse fails
+      parsed = {
+        executive_summary: rawContent || 'Analysis unavailable.',
+        key_observations: '',
+        strategic_recommendations: '',
+      };
+    }
 
-    const execSummary = execMatch?.[1]?.trim() ?? aiNarrative;
-    const keyObs      = obsMatch?.[1]?.trim()  ?? '';
-    const recommendations = recMatch?.[1]?.trim() ?? '';
+    const execSummary     = parsed.executive_summary?.trim() ?? '';
+    const keyObs          = parsed.key_observations?.trim() ?? '';
+    const recommendations = parsed.strategic_recommendations?.trim() ?? '';
 
     // ── Build HTML report (data tables rendered here, not by GLM) ───────
     const signalBadgeColor: Record<string, string> = {
@@ -226,6 +233,15 @@ Write the following 3 sections (each 2-4 sentences, professional tone):
   </style>
 </head>
 <body style="margin:0;padding:0;font-family:system-ui,-apple-system,sans-serif;background:#F7F6F2;color:#141412;">
+
+  <!-- PRINT BUTTON (hidden when printing) -->
+  <div class="no-print" style="position:fixed;top:20px;right:24px;z-index:999;">
+    <button
+      onclick="window.print()"
+      style="background:#C9A84C;color:#FAFAF8;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.2);">
+      ⬇ Export as PDF
+    </button>
+  </div>
 
   <!-- COVER -->
   <div style="background:#141412;color:#FAFAF8;padding:60px 48px 48px;min-height:200px;">
