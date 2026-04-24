@@ -1,13 +1,22 @@
+export type AttributeType = "text" | "number" | "image" | "selection";
+
+export type Attribute = {
+  type: AttributeType;
+  value: string | number | string[];
+  label?: string;
+};
+
+export type ProductAttributes = Record<string, Attribute>;
+
 export type Product = {
   id: string;
   business_id: string;
-  printify_product_id: string | null;
   title: string;
   description: string | null;
-  niche: string | null;
-  design_prompt: string | null;
-  design_url: string | null;
-  status: "draft" | "published" | "archived";
+  attributes: ProductAttributes | null;
+  design_path: string | null;
+  status: "draft" | "designing" | "ready" | "pushed" | "published" | "retired";
+  price: number;
   created_at: string;
   updated_at: string;
 };
@@ -32,11 +41,11 @@ export type ProductLaunch = {
 export type CreateProductInput = {
   title: string;
   description?: string;
-  niche?: string;
-  design_prompt?: string;
-  design_url?: string;
+  attributes?: ProductAttributes;
+  design_path?: string;
+  status?: "draft" | "designing" | "ready" | "pushed" | "published" | "retired";
 };
 
 export type UpdateProductInput = Partial<CreateProductInput> & {
-  status?: "draft" | "published" | "archived";
+  status?: "draft" | "designing" | "ready" | "pushed" | "published" | "retired";
 };

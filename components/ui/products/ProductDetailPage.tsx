@@ -4,25 +4,55 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Product } from "@/lib/types";
-import ProductForm from "@/components/ui/products/ProductForm";
+import ProductCanvas from "@/components/ui/products/ProductCanvas";
+import DesignAgent from "@/components/ui/products/DesignAgent";
 import Button from "@/components/ui/shared/Button";
+import type { Block } from "@/components/ui/products/EditableBlock";
 
 interface ProductDetailPageProps {
   businessId: string;
   productId: string;
+  businessName?: string;
+  businessNiche?: string;
+  isCreating?: boolean;
 }
+
+const getStatusColor = (status: string): string => {
+  switch (status) {
+    case "draft":
+      return "bg-amber-100 text-amber-800";
+    case "designing":
+      return "bg-blue-100 text-blue-800";
+    case "ready":
+      return "bg-emerald-100 text-emerald-800";
+    case "pushed":
+      return "bg-purple-100 text-purple-800";
+    case "published":
+      return "bg-green-100 text-green-800";
+    case "retired":
+      return "bg-gray-100 text-gray-800";
+    default:
+      return "bg-neutral-100 text-neutral-800";
+  }
+};
 
 const ProductDetailPage = ({
   businessId,
   productId,
+  businessName,
+  businessNiche,
+  isCreating = false,
 }: ProductDetailPageProps) => {
   const router = useRouter();
 
   const [product, setProduct] = useState<Product | null>(null);
+  const [blocks, setBlocks] = useState<Block[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isEditing, setIsEditing] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedProductType, setSelectedProductType] = useState<string | null>(
+    null,
+  );
 
   // Fetch product details
   useEffect(() => {
@@ -30,16 +60,31 @@ const ProductDetailPage = ({
       try {
         setIsLoading(true);
         setError(null);
-        const response = await fetch(
-          `/api/business/${businessId}/products/${productId}`,
-        );
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch product");
+        if (!isCreating) {
+          const response = await fetch(
+            `/api/business/${businessId}/products/${productId}`,
+          );
+          if (!response.ok) {
+            throw new Error("Failed to fetch product");
+          }
+          const data = (await response.json()) as Product;
+          setProduct(data);
+          initializeBlocksFromProduct(data);
+        } else {
+          setProduct({
+            id: productId,
+            business_id: businessId,
+            title: "",
+            description: null,
+            attributes: null,
+            design_path: null,
+            status: "draft",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          initializeBlocksForCreation();
         }
-
-        const data = await response.json();
-        setProduct(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred");
       } finally {
@@ -48,72 +93,239 @@ const ProductDetailPage = ({
     };
 
     fetchProduct();
-  }, [businessId, productId]);
+  }, [businessId, productId, isCreating]);
 
-  const handleUpdateProduct = async (
-    formData: Record<string, string | null>,
+  const initializeBlocksFromProduct = (product: Product) => {
+    const newBlocks: Block[] = [];
+
+    newBlocks.push({
+      id: "title",
+      name: "title",
+      type: "text",
+      label: "Product Title",
+      value: product.title || "",
+      placeholder: "Enter product title...",
+      required: true,
+    });
+
+    newBlocks.push({
+      id: "description",
+      name: "description",
+      type: "textarea",
+      label: "Description",
+      value: product.description || "",
+      placeholder: "Enter product description...",
+    });
+
+    if (product.design_path) {
+      newBlocks.push({
+        id: "design_path",
+        name: "design_path",
+        type: "image",
+        label: "Product Image",
+        value: product.design_path,
+        placeholder: "Supabase image URL...",
+      });
+    }
+
+    // Break down attributes JSONB into individual blocks
+    if (product.attributes && typeof product.attributes === "object") {
+      Object.entries(product.attributes).forEach(([key, attr]) => {
+        if (attr && typeof attr === "object") {
+          const attributeData = attr as {
+            type?: string;
+            label?: string;
+            value?: unknown;
+            placeholder?: string;
+            options?: string[];
+          };
+          newBlocks.push({
+            id: `attr_${key}`,
+            name: key,
+            type: (attributeData.type as Block["type"]) || "text",
+            label: attributeData.label || key,
+            value:
+              (attributeData.value as string | number | string[] | null) || "",
+            placeholder: attributeData.placeholder,
+            options: attributeData.options,
+          });
+        }
+      });
+    }
+
+    setBlocks(newBlocks);
+  };
+
+  const initializeBlocksForCreation = () => {
+    setBlocks([
+      {
+        id: "title",
+        name: "title",
+        type: "text",
+        label: "Product Title",
+        value: "",
+        placeholder: "Enter product title...",
+        required: true,
+      },
+      {
+        id: "description",
+        name: "description",
+        type: "textarea",
+        label: "Description",
+        value: "",
+        placeholder: "Enter product description...",
+      },
+    ]);
+  };
+
+  const handleBlockUpdate = (updatedBlock: Block) => {
+    setBlocks((prev) =>
+      prev.map((b) => (b.id === updatedBlock.id ? updatedBlock : b)),
+    );
+  };
+
+  const handleBlockRemove = (blockId: string) => {
+    setBlocks((prev) => prev.filter((b) => b.id !== blockId));
+  };
+
+  const handleBlockReorder = (reorderedBlocks: Block[]) => {
+    setBlocks(reorderedBlocks);
+  };
+
+  const handleBlockAdd = (newBlock: Block) => {
+    setBlocks((prev) => [...prev, newBlock]);
+  };
+
+  const handleProductSelect = (
+    printifyProductId: string,
+    productType: string,
   ) => {
+    setSelectedProductType(productType);
+  };
+
+  const handleFieldUpdate = (fieldName: string, fieldValue: unknown) => {
+    const existingBlockIndex = blocks.findIndex(
+      (b) => b.name === fieldName || b.id === `attr_${fieldName}`,
+    );
+
+    const newBlock: Block = {
+      id: `attr_${fieldName}`,
+      name: fieldName,
+      type: (fieldValue as any)?.type || "text",
+      label: (fieldValue as any)?.label || fieldName,
+      value: (fieldValue as any)?.value || "",
+      placeholder: (fieldValue as any)?.placeholder,
+      options: (fieldValue as any)?.options,
+    };
+
+    if (existingBlockIndex >= 0) {
+      const updated = [...blocks];
+      updated[existingBlockIndex] = newBlock;
+      setBlocks(updated);
+    } else {
+      setBlocks((prev) => [...prev, newBlock]);
+    }
+  };
+
+  const buildPayloadFromBlocks = () => {
+    const attributes: Record<string, unknown> = {};
+    const basicFields: Record<string, unknown> = {};
+
+    blocks.forEach((block) => {
+      if (block.name === "title") {
+        basicFields.title = block.value;
+      } else if (block.name === "description") {
+        basicFields.description = block.value;
+      } else if (block.name === "design_path") {
+        basicFields.design_path = block.value;
+      } else {
+        attributes[block.name] = {
+          type: block.type,
+          label: block.label,
+          value: block.value,
+          placeholder: block.placeholder,
+          options: block.options,
+        };
+      }
+    });
+
+    return {
+      title: basicFields.title || "Untitled Product",
+      description: basicFields.description || null,
+      design_path: basicFields.design_path || null,
+      attributes: Object.keys(attributes).length > 0 ? attributes : null,
+    };
+  };
+
+  const handleSaveProduct = async () => {
+    if (!product) return;
+
     try {
-      setIsSubmitting(true);
+      setIsSaving(true);
+      setError(null);
+
+      const payload = buildPayloadFromBlocks();
+
       const response = await fetch(
         `/api/business/${businessId}/products/${productId}`,
         {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(formData),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
         },
       );
 
       if (!response.ok) {
-        throw new Error("Failed to update product");
+        throw new Error("Failed to save product");
       }
 
-      const updatedProduct = await response.json();
+      const updatedProduct = (await response.json()) as Product;
       setProduct(updatedProduct);
-      setIsEditing(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update product");
-      throw err;
+      setError(err instanceof Error ? err.message : "Failed to save product");
     } finally {
-      setIsSubmitting(false);
+      setIsSaving(false);
     }
   };
 
-  const handleDeleteProduct = async () => {
-    if (
-      !confirm(
-        "Are you sure you want to delete this product? This action cannot be undone.",
-      )
-    ) {
-      return;
-    }
+  const handleConfirmProduct = async () => {
+    if (!product) return;
 
     try {
+      setIsSaving(true);
+      setError(null);
+
+      const payload = buildPayloadFromBlocks();
+
       const response = await fetch(
         `/api/business/${businessId}/products/${productId}`,
         {
-          method: "DELETE",
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, status: "ready" }),
         },
       );
 
       if (!response.ok) {
-        throw new Error("Failed to delete product");
+        throw new Error("Failed to confirm product");
       }
 
       router.push(`/business/${businessId}/products`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete product");
+      setError(
+        err instanceof Error ? err.message : "Failed to confirm product",
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center bg-light">
+      <div className="flex items-center justify-center h-full bg-light-secondary">
         <div className="text-center">
-          <div className="text-4xl mb-3">⏳</div>
-          <p className="text-neutral-500">Loading product...</p>
+          <div className="text-4xl mb-4">⏳</div>
+          <p className="text-neutral-600">Loading product...</p>
         </div>
       </div>
     );
@@ -121,12 +333,15 @@ const ProductDetailPage = ({
 
   if (!product) {
     return (
-      <div className="flex h-full items-center justify-center bg-light">
+      <div className="flex items-center justify-center h-full bg-light-secondary">
         <div className="text-center">
-          <div className="text-4xl mb-3">❌</div>
-          <p className="text-neutral-500 mb-4">Product not found</p>
-          <Link href={`/business/${businessId}/products`}>
-            <Button variant="primary">Back to Products</Button>
+          <div className="text-4xl mb-4">❌</div>
+          <p className="text-neutral-600 mb-4">Product not found</p>
+          <Link
+            href={`/business/${businessId}/products`}
+            className="text-primary-500 hover:underline"
+          >
+            Back to products
           </Link>
         </div>
       </div>
@@ -135,174 +350,78 @@ const ProductDetailPage = ({
 
   return (
     <div className="flex h-full bg-light-secondary">
-      {/* Main Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-4xl">
-          {/* Header */}
-          <div className="mb-6 flex items-center justify-between">
-            <Link href={`/business/${businessId}/products`}>
-              <Button variant="outline">← Back</Button>
+      {/* Main Canvas Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <div className="bg-white border-b border-neutral-300 px-6 py-4 flex items-center justify-between">
+          <div>
+            <Link
+              href={`/business/${businessId}/products`}
+              className="text-sm text-primary-500 hover:underline mb-2 inline-block"
+            >
+              ← Back
             </Link>
-            <div className="flex gap-2">
-              {!isEditing && (
-                <>
-                  <Button
-                    variant="secondary"
-                    onClick={() => setIsEditing(true)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleDeleteProduct}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    Delete
-                  </Button>
-                </>
-              )}
+            <div className="flex items-center gap-3">
+              <h1 className="font-serif text-3xl font-bold text-dark">
+                {isCreating ? "Create New Product" : "Edit Product"}
+              </h1>
+              <span
+                className={`text-xs font-semibold px-2 py-1 rounded-full ${getStatusColor(product.status)}`}
+              >
+                {product.status.charAt(0).toUpperCase() +
+                  product.status.slice(1)}
+              </span>
             </div>
-          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-              {error}
-            </div>
-          )}
-
-          {/* Content */}
-          <div className="bg-white rounded-lg shadow-md p-8">
-            {isEditing ? (
-              <>
-                <h1 className="font-serif text-3xl font-bold text-dark mb-6">
-                  Edit Product
-                </h1>
-                <ProductForm
-                  product={product}
-                  businessId={businessId}
-                  onSubmit={handleUpdateProduct}
-                  isLoading={isSubmitting}
-                />
-                <div className="mt-4">
-                  <Button variant="outline" onClick={() => setIsEditing(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Product Image */}
-                {product.design_url && (
-                  <div className="mb-8">
-                    <img
-                      src={product.design_url}
-                      alt={product.title}
-                      width={500}
-                      height={500}
-                      style={{ width: "auto", height: "auto" }}
-                      className="w-full max-w-md h-auto rounded-lg shadow-md"
-                    />
-                  </div>
-                )}
-
-                {/* Product Details */}
-                <h1 className="font-serif text-4xl font-bold text-dark mb-4">
-                  {product.title}
-                </h1>
-
-                <div className="flex gap-2 mb-6">
-                  <span
-                    className={`text-sm font-semibold px-3 py-1 rounded-full ${
-                      product.status === "published"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : product.status === "draft"
-                          ? "bg-amber-100 text-amber-800"
-                          : "bg-neutral-200 text-neutral-700"
-                    }`}
-                  >
-                    {product.status.charAt(0).toUpperCase() +
-                      product.status.slice(1)}
-                  </span>
-                  {product.niche && (
-                    <span className="bg-light-secondary text-dark text-sm px-3 py-1 rounded">
-                      {product.niche}
-                    </span>
-                  )}
-                </div>
-
-                {/* Description */}
-                {product.description && (
-                  <div className="mb-8">
-                    <h2 className="font-serif text-xl font-bold text-dark mb-3">
-                      Description
-                    </h2>
-                    <p className="text-neutral-600 whitespace-pre-wrap">
-                      {product.description}
-                    </p>
-                  </div>
-                )}
-
-                {/* Design Prompt */}
-                {product.design_prompt && (
-                  <div className="mb-8">
-                    <h2 className="font-serif text-xl font-bold text-dark mb-3">
-                      Design Prompt
-                    </h2>
-                    <p className="text-neutral-600 whitespace-pre-wrap bg-light-secondary p-4 rounded">
-                      {product.design_prompt}
-                    </p>
-                  </div>
-                )}
-
-                {/* Metadata */}
-                <div className="border-t border-neutral-200 pt-6 mt-8">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <p className="text-sm text-neutral-500 mb-1">Created</p>
-                      <p className="text-lg font-semibold text-dark">
-                        {new Date(product.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-neutral-500 mb-1">
-                        Last Updated
-                      </p>
-                      <p className="text-lg font-semibold text-dark">
-                        {new Date(product.updated_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Printify Info */}
-                {product.printify_product_id && (
-                  <div className="mt-6 p-4 bg-blue-50 rounded border border-blue-200">
-                    <p className="text-sm text-blue-700">
-                      <strong>Printify Product ID:</strong>{" "}
-                      {product.printify_product_id}
-                    </p>
-                  </div>
-                )}
-              </>
+            {selectedProductType && (
+              <p className="text-sm text-neutral-600 mt-1">
+                Product Type: <strong>{selectedProductType}</strong>
+              </p>
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Right Panel - AI Agent Insights */}
-      <div className="w-80 bg-dark border-l border-neutral-300 p-6 flex flex-col">
-        <h2 className="font-serif text-xl font-bold text-light mb-4">
-          AI Insights
-        </h2>
-        <div className="flex-1 flex items-center justify-center text-center">
-          <div>
-            <div className="text-4xl mb-3">🤖</div>
-            <p className="text-light-muted text-sm">
-              Product Agent analysis and recommendations will appear here
-            </p>
+          <div className="flex gap-3">
+            <Button
+              variant="primary"
+              onClick={handleSaveProduct}
+              disabled={isSaving}
+            >
+              {isSaving ? "Saving..." : "Save"}
+            </Button>
           </div>
         </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border-b border-red-300 px-6 py-3 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Canvas Editor */}
+        <ProductCanvas
+          blocks={blocks}
+          onBlockUpdate={handleBlockUpdate}
+          onBlockRemove={handleBlockRemove}
+          onBlockReorder={handleBlockReorder}
+          onBlockAdd={handleBlockAdd}
+        />
+      </div>
+
+      {/* Right Panel - Design Agent */}
+      <div className="w-96 hidden lg:flex bg-dark border-l border-neutral-300 overflow-hidden">
+        <DesignAgent
+          businessId={businessId}
+          productId={productId}
+          businessName={businessName}
+          businessNiche={businessNiche}
+          productTitle={blocks.find((b) => b.name === "title")?.value as string}
+          productDescription={
+            blocks.find((b) => b.name === "description")?.value as string
+          }
+          productStatus={product.status}
+          onProductSelect={handleProductSelect}
+          onFieldUpdate={handleFieldUpdate}
+          onConfirm={handleConfirmProduct}
+        />
       </div>
     </div>
   );

@@ -100,9 +100,8 @@ export async function POST(
     const {
       title,
       description = null,
-      niche = null,
-      design_prompt = null,
-      design_url = null,
+      attributes = null,
+      design_path = null,
       status = "draft",
     } = body;
 
@@ -117,9 +116,8 @@ export async function POST(
         business_id: businessId,
         title,
         description,
-        niche,
-        design_prompt,
-        design_url,
+        attributes,
+        design_path,
         status,
       })
       .select();

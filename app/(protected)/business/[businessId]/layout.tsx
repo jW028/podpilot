@@ -14,7 +14,7 @@ export default async function ProtectedLayout({
     <div className="flex h-screen">
       {/* Header spans full width at the top */}
       <Sidebar businessId={businessId} />
-      <div className="p-6 w-10/12">{children}</div>
+      <div className="w-10/12">{children}</div>
     </div>
   );
 }

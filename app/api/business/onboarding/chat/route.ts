@@ -24,7 +24,9 @@ interface ChatResponsePayload {
   framework?: BusinessFramework;
 }
 
-const isFrameworkShapeValid = (payload: unknown): payload is BusinessFramework => {
+const isFrameworkShapeValid = (
+  payload: unknown,
+): payload is BusinessFramework => {
   if (!payload || typeof payload !== "object") {
     return false;
   }
@@ -80,7 +82,11 @@ export async function POST(request: Request) {
       framework?: BusinessFramework | null;
     };
 
-    if (!body.messages || !Array.isArray(body.messages) || !body.messages.length) {
+    if (
+      !body.messages ||
+      !Array.isArray(body.messages) ||
+      !body.messages.length
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -91,14 +97,14 @@ export async function POST(request: Request) {
     }
 
     const apiKey = process.env.GLM_API_KEY;
-    const model = process.env.GLM_MODEL || "ilmu-glm-5.1";
-    const baseUrl = process.env.ILMU_BASE_URL || "https://api.ilmu.ai/v1";
+    const model = process.env.GLM_MODEL!;
+    const baseUrl = process.env.ILMU_BASE_URL!;
 
-    if (!apiKey) {
+    if (!apiKey || !model || !baseUrl) {
       return NextResponse.json(
         {
           success: false,
-          message: "Missing GLM API key.",
+          message: "Missing GLM API key and configuration.",
         },
         { status: 500 },
       );
@@ -184,13 +190,11 @@ If not ready, set frameworkReady=false and framework=null.`;
       );
     }
 
-    const parsed = parseModelJson(content) as
-      | {
-          reply?: unknown;
-          frameworkReady?: unknown;
-          framework?: unknown;
-        }
-      | null;
+    const parsed = parseModelJson(content) as {
+      reply?: unknown;
+      frameworkReady?: unknown;
+      framework?: unknown;
+    } | null;
 
     if (!parsed || typeof parsed.reply !== "string") {
       return NextResponse.json(
@@ -204,9 +208,10 @@ If not ready, set frameworkReady=false and framework=null.`;
     }
 
     const frameworkReady = Boolean(parsed.frameworkReady);
-    const framework = frameworkReady && isFrameworkShapeValid(parsed.framework)
-      ? parsed.framework
-      : undefined;
+    const framework =
+      frameworkReady && isFrameworkShapeValid(parsed.framework)
+        ? parsed.framework
+        : undefined;
 
     const payload: ChatResponsePayload = {
       reply: parsed.reply,

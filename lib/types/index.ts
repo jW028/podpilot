@@ -10,6 +10,9 @@ export type {
   ProductLaunch,
   CreateProductInput,
   UpdateProductInput,
+  Attribute,
+  AttributeType,
+  ProductAttributes,
 } from "./product";
 
 export type {
