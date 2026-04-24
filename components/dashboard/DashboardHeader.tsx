@@ -23,6 +23,9 @@ const DashboardHeader = () => {
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" href="/dashboard/customer-service">
+          Customer Service
+        </Button>
         <ProfileDropdown />
         <Button variant="primary" size="sm">
           + New Business

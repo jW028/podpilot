@@ -5,7 +5,6 @@ const DashboardPage = () => {
   return (
     <>
       <DashboardHeader />
-      <main></main>
     </>
   );
 };
