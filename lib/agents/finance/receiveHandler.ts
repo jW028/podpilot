@@ -96,6 +96,19 @@ export async function processIncomingMessages(
             console.log(
               `[FinanceAgent:receive] Projected margin: ${margin.toFixed(2)}%`
             );
+            // Write listed_price back to products.price (new schema field)
+            if (p.product_id && p.listed_price > 0) {
+              const { error: priceErr } = await supabase
+                .from('products')
+                .update({ price: p.listed_price })
+                .eq('id', p.product_id)
+                .eq('business_id', businessId);
+              if (priceErr) {
+                console.warn(`[FinanceAgent:receive] Failed to update product price: ${priceErr.message}`);
+              } else {
+                console.log(`[FinanceAgent:receive] Updated products.price = ${p.listed_price} for ${p.product_title}`);
+              }
+            }
             break;
           }
 
@@ -104,6 +117,19 @@ export async function processIncomingMessages(
             console.log(
               `[FinanceAgent:receive] Price updated for ${p.product_title}: RM ${p.old_price} → RM ${p.new_price}`
             );
+            // Sync new price to products.price
+            if (p.product_id && p.new_price > 0) {
+              const { error: priceErr } = await supabase
+                .from('products')
+                .update({ price: p.new_price })
+                .eq('id', p.product_id)
+                .eq('business_id', businessId);
+              if (priceErr) {
+                console.warn(`[FinanceAgent:receive] Failed to sync updated price: ${priceErr.message}`);
+              } else {
+                console.log(`[FinanceAgent:receive] Synced products.price = ${p.new_price} for ${p.product_title}`);
+              }
+            }
             break;
           }
 
