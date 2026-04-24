@@ -107,7 +107,8 @@ export async function POST(request: Request) {
       : '  No active signals.';
 
     // ── Compact prompt ──────────────────────────────────────────────────
-    // GLM generates only the 3 narrative sections as JSON — all data tables rendered by server.
+    // GLM generates 3 narrative sections separated by ---SECTION--- delimiters.
+    // Plain text, no JSON — more reliable across model versions.
     const glm = getGlmClient();
 
     const completion = await glm.chat.completions.create({
@@ -115,8 +116,12 @@ export async function POST(request: Request) {
       messages: [
         {
           role: 'system',
-          content:
-            'You are a financial analyst for a print-on-demand business. Respond ONLY with a valid JSON object with exactly 3 string keys: "executive_summary", "key_observations", "strategic_recommendations". No markdown, no HTML, no extra text outside the JSON. Each value is plain text (2-4 sentences). strategic_recommendations must be 4 numbered actions separated by newlines.',
+          content: `You are a professional financial analyst writing a report for a print-on-demand business.
+Write exactly 3 sections separated by the delimiter ---SECTION--- (on its own line).
+Section 1: Executive Summary (2-3 sentences on overall business health and highlights).
+Section 2: Key Observations (2-3 sentences on important product-level findings).
+Section 3: Strategic Recommendations (exactly 4 numbered action items, one per line).
+Plain text only — no JSON, no markdown, no HTML tags. Do not include section titles.`,
         },
         {
           role: 'user',
@@ -132,37 +137,21 @@ ${productRows}
 Signals:
 ${signalRows}
 
-Insights:
+Existing insights:
 ${insights}`,
         },
       ],
-      temperature: 0.3,
+      temperature: 0.4,
       max_tokens: 700,
     });
 
-    // Parse JSON from GLM — strip markdown fences if model wraps in ```json
-    let rawContent = completion.choices[0]?.message?.content?.trim() ?? '{}';
-    rawContent = rawContent
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim();
+    // Split by ---SECTION--- delimiter
+    const rawContent = (completion.choices[0]?.message?.content ?? '').trim();
+    const sections = rawContent.split(/---SECTION---/i).map(s => s.trim());
 
-    let parsed: { executive_summary?: string; key_observations?: string; strategic_recommendations?: string } = {};
-    try {
-      parsed = JSON.parse(rawContent);
-    } catch {
-      // Fallback: use full raw content as executive summary if JSON parse fails
-      parsed = {
-        executive_summary: rawContent || 'Analysis unavailable.',
-        key_observations: '',
-        strategic_recommendations: '',
-      };
-    }
-
-    const execSummary     = parsed.executive_summary?.trim() ?? '';
-    const keyObs          = parsed.key_observations?.trim() ?? '';
-    const recommendations = parsed.strategic_recommendations?.trim() ?? '';
+    const execSummary     = sections[0] || insights || 'Analysis unavailable.';
+    const keyObs          = sections[1] || '';
+    const recommendations = sections[2] || '';
 
     // ── Build HTML report (data tables rendered here, not by GLM) ───────
     const signalBadgeColor: Record<string, string> = {
@@ -234,7 +223,14 @@ ${insights}`,
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .no-print { display: none; }
+      .avoid-break { page-break-inside: avoid; break-inside: avoid; }
+      .page-break-before { page-break-before: always; break-before: always; }
+      table { page-break-inside: avoid; break-inside: avoid; }
+      thead { display: table-header-group; }
+      tr { page-break-inside: avoid; break-inside: avoid; }
     }
+    .avoid-break { page-break-inside: avoid; break-inside: avoid; }
+    thead { display: table-header-group; }
   </style>
 </head>
 <body style="margin:0;padding:0;font-family:system-ui,-apple-system,sans-serif;background:#F7F6F2;color:#141412;">
@@ -272,21 +268,20 @@ ${insights}`,
     </div>
 
     <!-- EXECUTIVE SUMMARY -->
-    <div style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;padding:28px;margin-bottom:24px;">
+    <div class="avoid-break" style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;padding:28px;margin-bottom:24px;">
       <h3 style="margin:0 0 16px;font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:#C9A84C;font-family:system-ui;">Executive Summary</h3>
       <p style="margin:0;line-height:1.8;color:#141412;font-size:14px;">${execSummary.replace(/\n/g, '<br/>')}</p>
     </div>
 
     <!-- KEY OBSERVATIONS -->
-    ${keyObs ? `
-    <div style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;padding:28px;margin-bottom:24px;">
+    <div class="avoid-break" style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;padding:28px;margin-bottom:24px;">
       <h3 style="margin:0 0 16px;font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:#C9A84C;font-family:system-ui;">Key Observations</h3>
       <p style="margin:0;line-height:1.8;color:#141412;font-size:14px;">${keyObs.replace(/\n/g, '<br/>')}</p>
-    </div>` : ''}
+    </div>
 
     <!-- REVENUE TREND -->
     ${chartData.length > 0 ? `
-    <div style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;padding:28px;margin-bottom:24px;">
+    <div class="avoid-break" style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;padding:28px;margin-bottom:24px;">
       <h3 style="margin:0 0 20px;font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:#C9A84C;font-family:system-ui;">Revenue Trend — Last ${chartData.length} Months</h3>
       <div style="display:flex;align-items:flex-end;gap:8px;height:140px;padding-bottom:0;">
         ${trendBars}
@@ -294,7 +289,7 @@ ${insights}`,
     </div>` : ''}
 
     <!-- PRODUCT PERFORMANCE -->
-    <div style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;overflow:hidden;margin-bottom:24px;">
+    <div class="avoid-break" style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;overflow:hidden;margin-bottom:24px;">
       <div style="padding:20px 20px 16px;border-bottom:1px solid #E8E7E2;">
         <h3 style="margin:0;font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:#C9A84C;font-family:system-ui;">Product Performance</h3>
       </div>
@@ -311,17 +306,16 @@ ${insights}`,
     </div>
 
     <!-- AGENT SIGNALS -->
-    <div style="margin-bottom:24px;">
+    <div class="avoid-break" style="margin-bottom:24px;">
       <h3 style="margin:0 0 16px;font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:#C9A84C;font-family:system-ui;">◈ Agent Signals</h3>
       ${signalCards}
     </div>
 
     <!-- STRATEGIC RECOMMENDATIONS -->
-    ${recommendations ? `
-    <div style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;padding:28px;margin-bottom:40px;">
+    <div class="avoid-break" style="background:#FFFFFF;border:1px solid #E8E7E2;border-radius:10px;padding:28px;margin-bottom:40px;">
       <h3 style="margin:0 0 16px;font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:#C9A84C;font-family:system-ui;">Strategic Recommendations</h3>
       <div style="line-height:1.8;color:#141412;font-size:14px;">${recommendations.replace(/\n/g, '<br/>')}</div>
-    </div>` : ''}
+    </div>
 
     <!-- FOOTER -->
     <div style="border-top:1px solid #E8E7E2;padding-top:20px;display:flex;justify-content:space-between;align-items:center;">
