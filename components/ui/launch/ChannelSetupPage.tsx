@@ -104,7 +104,9 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
 
       setChannels(json.channels || []);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to refresh channels");
+      setError(
+        err instanceof Error ? err.message : "Failed to refresh channels",
+      );
     } finally {
       setRefreshing(false);
     }
@@ -120,7 +122,7 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
   }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <section className="max-w-4xl mx-auto space-y-6">
+    <section className="max-w-4xl mx-auto space-y-6 p-8">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-serif text-3xl font-bold text-dark">

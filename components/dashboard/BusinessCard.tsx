@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ArrowRight } from "lucide-react";
 
 interface BusinessCardProps {
   id: string;
@@ -43,14 +44,7 @@ const BusinessCard = ({
   };
 
   const getAvatarColor = (text: string) => {
-    const colors = [
-      "from-primary-300 to-primary-500",
-      "from-blue-300 to-blue-500",
-      "from-emerald-300 to-emerald-500",
-      "from-purple-300 to-purple-500",
-    ];
-    const index = text.charCodeAt(0) % colors.length;
-    return colors[index];
+    return "bg-light-secondary border border-neutral-200 text-dark";
   };
 
   const getStatusBadge = (status: string) => {
@@ -91,7 +85,7 @@ const BusinessCard = ({
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3 flex-1">
           <div
-            className={`w-12 h-12 rounded-lg bg-linear-to-br ${getAvatarColor(name)} flex items-center justify-center text-white font-bold text-sm`}
+            className={`w-10 h-10 rounded-lg ${getAvatarColor(name)} flex items-center justify-center font-serif font-bold text-sm`}
           >
             {getInitials(name)}
           </div>
@@ -152,11 +146,15 @@ const BusinessCard = ({
           </div>
         ) : agentStatus ? (
           <div className="flex items-center gap-2">
-            <span className={`text-lg ${agentStatus.icon}`}>
-              {agentStatus.icon === "🟡" && "●"}
-              {agentStatus.icon === "🟢" && "●"}
-              {agentStatus.icon === "🔴" && "●"}
-            </span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                agentStatus.icon === "running"
+                  ? "bg-amber-400 animate-pulse"
+                  : agentStatus.icon === "idle"
+                    ? "bg-emerald-400"
+                    : "bg-red-400"
+              }`}
+            />
             <p className="text-sm text-neutral-600">{agentStatus.status}</p>
           </div>
         ) : (
@@ -167,12 +165,10 @@ const BusinessCard = ({
       {/* Action Button */}
       <Link
         href={`/business/${id}/workflow`}
-        className="flex items-center justify-between px-3 py-2 rounded-lg bg-light-secondary hover:bg-neutral-100 transition-colors group text-dark"
+        className="flex items-center justify-between px-3 py-2 rounded-lg bg-light-secondary hover:bg-neutral-100 transition-colors group text-dark mt-2 border border-transparent hover:border-neutral-200"
       >
         <span className="text-sm font-medium">View Business</span>
-        <span className="text-lg group-hover:translate-x-1 transition-transform">
-          →
-        </span>
+        <ArrowRight className="h-4 w-4 text-neutral-400 group-hover:translate-x-1 group-hover:text-dark transition-all" />
       </Link>
     </div>
   );

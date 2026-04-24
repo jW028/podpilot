@@ -6,6 +6,7 @@ import BusinessCard from "./BusinessCard";
 import Button from "@/components/ui/shared/Button";
 import DashboardHeader from "./DashboardHeader";
 import LoadingState from "../ui/shared/LoadingState";
+import { Plus } from "lucide-react";
 
 interface Business {
   id: string;
@@ -62,9 +63,9 @@ const DashboardPageContent = () => {
             products: [23, 18, 0][index] || Math.floor(Math.random() * 50),
             agentStatus:
               index === 0
-                ? { status: "Product Agent running", icon: "🟡" }
+                ? { status: "Product Agent running", icon: "running" }
                 : index === 1
-                  ? { status: "All agents idle", icon: "🟢" }
+                  ? { status: "All agents idle", icon: "idle" }
                   : undefined,
             onboardingProgress:
               index === 2 ? { current: 3, total: 5 } : undefined,
@@ -195,7 +196,7 @@ const DashboardPageContent = () => {
                 className="bg-white border border-dashed border-neutral-300 rounded-lg p-6 flex flex-col items-center justify-center min-h-80 hover:bg-light-secondary transition-colors cursor-pointer"
                 onClick={() => setShowCreateForm(!showCreateForm)}
               >
-                <div className="text-4xl mb-3">✨</div>
+                <Plus className="h-8 w-8 text-neutral-400 mb-3" />
                 <h3 className="font-serif text-lg font-bold text-dark mb-2">
                   Create new business
                 </h3>
