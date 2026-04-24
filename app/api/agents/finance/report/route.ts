@@ -106,45 +106,63 @@ export async function POST(request: Request) {
       ? signals.map(s => `  [${s.action?.toUpperCase()}] ${s.product_name} — ${s.reason}`).join('\n')
       : '  No active signals.';
 
-    // ── Call GLM with 3 separate small prompts (parallel, each max_tokens:200) ─────
-    // One call per section = no delimiter parsing, no format guessing, always works.
+    // ── Single GLM call for all 3 narrative sections ──────────────────────────
+    // Single call avoids rate-limit issues from parallel requests.
     const glm = getGlmClient();
 
-    const dataContext = `Business: ${businessName} | Marketplace: ${marketplace} | Revenue: RM ${revenue} | Costs: RM ${costs} | Profit: RM ${profit} | Margin: ${margin}% | Orders: ${orders}\nProducts: ${productRows}\nSignals: ${signalRows}`;
+    // Build smart code-based fallbacks from real data (used if GLM fails/times out)
+    const topProduct = [...byProduct].sort((a: any, b: any) => parseFloat(b.margin_pct) - parseFloat(a.margin_pct))[0];
+    const bottomProduct = [...byProduct].sort((a: any, b: any) => parseFloat(a.margin_pct) - parseFloat(b.margin_pct))[0];
+    const repriceProducts = byProduct.filter((p: any) => parseFloat(p.margin_pct) < 30);
+    const boostProducts = byProduct.filter((p: any) => parseFloat(p.margin_pct) >= 40);
 
-    const [execRes, obsRes, recRes] = await Promise.all([
-      glm.chat.completions.create({
-        model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
-        messages: [
-          { role: 'system', content: 'You are a financial analyst. Write 2-3 sentences summarising overall business health and highlights for a print-on-demand store. Plain text only, no bullet points, no titles.' },
-          { role: 'user', content: dataContext },
-        ],
-        temperature: 0.4,
-        max_tokens: 180,
-      }),
-      glm.chat.completions.create({
-        model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
-        messages: [
-          { role: 'system', content: 'You are a financial analyst. Write 2-3 sentences on the most important product-level findings: which products perform well, which are underperforming, and why. Plain text only, no bullet points, no titles.' },
-          { role: 'user', content: dataContext },
-        ],
-        temperature: 0.4,
-        max_tokens: 180,
-      }),
-      glm.chat.completions.create({
-        model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
-        messages: [
-          { role: 'system', content: 'You are a financial analyst. Write exactly 4 strategic action items for this print-on-demand business. Format: "1. [action]" on each line. Plain text only, no intro sentence, no titles.' },
-          { role: 'user', content: dataContext },
-        ],
-        temperature: 0.4,
-        max_tokens: 180,
-      }),
-    ]);
+    const fallbackObs = [
+      topProduct ? `${topProduct.title} leads with a ${parseFloat(topProduct.margin_pct).toFixed(1)}% margin and ${topProduct.units_sold} units sold, making it the strongest performer in the portfolio.` : '',
+      bottomProduct && parseFloat(bottomProduct.margin_pct) < 20 ? `${bottomProduct.title} is critically underperforming at ${parseFloat(bottomProduct.margin_pct).toFixed(1)}% margin — immediate repricing or retirement is recommended.` : '',
+      repriceProducts.length > 0 ? `${repriceProducts.length} product(s) fall below the 30% margin threshold and require pricing review.` : 'All products are maintaining healthy margins above the 30% target.',
+    ].filter(Boolean).join(' ');
 
-    const execSummary     = execRes.choices[0]?.message?.content?.trim() || insights || 'Analysis unavailable.';
-    const keyObs          = obsRes.choices[0]?.message?.content?.trim()  || 'No additional observations.';
-    const recommendations = recRes.choices[0]?.message?.content?.trim()  || '1. Review underperforming products\n2. Boost high-margin items\n3. Optimise pricing strategy\n4. Monitor monthly trends';
+    const fallbackRec = [
+      boostProducts.length > 0 ? `1. Increase ad spend on ${boostProducts.map((p: any) => p.title).join(' and ')} — high margin makes them strong ROI candidates.` : '1. Identify top-margin products and allocate promotional budget accordingly.',
+      repriceProducts.length > 0 ? `2. Raise prices on ${repriceProducts.map((p: any) => p.title).join(', ')} to bring margins above 30%.` : '2. Maintain current pricing strategy as all products are above margin targets.',
+      `3. Run a small paid promotion (RM 20–50) on ${topProduct?.title ?? 'top products'} to validate demand before scaling ad spend.`,
+      `4. Set a monthly snapshot review cadence to track margin trends and act on Finance Agent signals promptly.`,
+    ].join('\n');
+
+    let execSummary = insights || '';
+    let keyObs = fallbackObs;
+    let recommendations = fallbackRec;
+
+    try {
+      const glmRes = await glm.chat.completions.create({
+        model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a financial analyst writing a report for a print-on-demand business. Write exactly 3 sections, each separated by the exact string "|||".
+Section 1 (2-3 sentences): Overall business health and key highlights.
+Section 2 (2-3 sentences): Most important product-level findings — which perform well, which underperform, and why.
+Section 3 (4 numbered items): Strategic action recommendations, one per line, format "1. action".
+Output ONLY the 3 sections separated by "|||". No titles, no intro text, no markdown.`,
+          },
+          {
+            role: 'user',
+            content: `Business: ${businessName} | Revenue: RM ${revenue} | Costs: RM ${costs} | Profit: RM ${profit} | Margin: ${margin}% | Orders: ${orders}\nProducts: ${productRows}\nSignals: ${signalRows}`,
+          },
+        ],
+        temperature: 0.4,
+        max_tokens: 500,
+      });
+
+      const raw = glmRes.choices[0]?.message?.content?.trim() ?? '';
+      const parts = raw.split('|||').map((s: string) => s.trim()).filter(Boolean);
+
+      if (parts[0] && parts[0].length > 20) execSummary = parts[0];
+      if (parts[1] && parts[1].length > 20) keyObs = parts[1];
+      if (parts[2] && parts[2].length > 20) recommendations = parts[2];
+    } catch (glmErr: any) {
+      console.warn('[Report] GLM call failed, using code-based fallbacks:', glmErr.message);
+    }
 
     // ── Build HTML report (data tables rendered here, not by GLM) ───────
     const signalBadgeColor: Record<string, string> = {
@@ -213,6 +231,12 @@ export async function POST(request: Request) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Finance Report — ${businessName}</title>
   <style>
+    @page {
+      margin: 48px 40px;  /* top/bottom left/right page margins for pages 2+ */
+    }
+    @page :first {
+      margin: 0;  /* cover page has no margin — it handles its own padding */
+    }
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .no-print { display: none; }
