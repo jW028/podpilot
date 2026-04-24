@@ -3,6 +3,7 @@
 import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import LoadingState from "../ui/shared/LoadingState";
 
 export function ProtectedLayoutClient({
   children,
@@ -20,16 +21,8 @@ export function ProtectedLayoutClient({
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen bg-light flex items-center justify-center px-6">
-        <div className="w-full max-w-sm bg-white border border-neutral-300 rounded-xl p-6 text-center">
-          <div className="h-10 w-10 mx-auto rounded-full border-2 border-neutral-300 border-t-primary-500 animate-spin" />
-          <h2 className="mt-4 font-serif text-xl text-light-primary">
-            Preparing your workspace
-          </h2>
-          <p className="mt-2 text-sm text-neutral-500">
-            Verifying account session and loading your protected pages.
-          </p>
-        </div>
+      <div className="flex items-center justify-center min-h-screen bg-light-secondary">
+        <LoadingState message="" />
       </div>
     );
   }

@@ -9,8 +9,9 @@ import DesignAgent from "@/components/ui/products/DesignAgent";
 import Button from "@/components/ui/shared/Button";
 import ConfirmDialog from "@/components/ui/shared/ConfirmDialog";
 import type { Block } from "@/components/ui/products/EditableBlock";
-import { Dot, ChevronLeft, ChevronDown } from "lucide-react";
+import { Dot, ChevronLeft, ChevronDown, PackageX } from "lucide-react";
 import { MdCloudUpload } from "react-icons/md";
+import LoadingState from "../shared/LoadingState";
 
 interface ProductDetailPageProps {
   businessId: string;
@@ -96,7 +97,8 @@ const resolveFieldType = (
   fieldName: string,
   storedType?: string,
 ): Block["type"] => {
-  if (MULTI_SELECT_FIELDS.includes(fieldName.toLowerCase())) return "multi-selection";
+  if (MULTI_SELECT_FIELDS.includes(fieldName.toLowerCase()))
+    return "multi-selection";
   return (storedType as Block["type"]) || "text";
 };
 
@@ -127,7 +129,7 @@ const ProductDetailPage = ({
     try {
       const response = await fetch(
         `/api/business/${businessId}/products/${productId}/image`,
-        { cache: "no-store" }
+        { cache: "no-store" },
       );
       if (response.ok) {
         const data = await response.json();
@@ -441,7 +443,9 @@ const ProductDetailPage = ({
     return {
       title: basicFields.title || "Untitled Product",
       description: basicFields.description || null,
-      price: basicFields.price ? Math.round((basicFields.price as number) * 100) : 0,
+      price: basicFields.price
+        ? Math.round((basicFields.price as number) * 100)
+        : 0,
       attributes: Object.keys(attributes).length > 0 ? attributes : null,
     };
   };
@@ -568,10 +572,22 @@ const ProductDetailPage = ({
   };
 
   // Status options the user can pick from (only draft/designing/ready)
-  const USER_STATUSES: { value: Product["status"]; label: string; color: string }[] = [
+  const USER_STATUSES: {
+    value: Product["status"];
+    label: string;
+    color: string;
+  }[] = [
     { value: "draft", label: "Draft", color: "bg-amber-100 text-amber-800" },
-    { value: "designing", label: "Designing", color: "bg-blue-100 text-blue-800" },
-    { value: "ready", label: "Ready", color: "bg-emerald-100 text-emerald-800" },
+    {
+      value: "designing",
+      label: "Designing",
+      color: "bg-blue-100 text-blue-800",
+    },
+    {
+      value: "ready",
+      label: "Ready",
+      color: "bg-emerald-100 text-emerald-800",
+    },
   ];
 
   const isLaunchControlled = ["pushed", "published", "retired"].includes(
@@ -585,10 +601,7 @@ const ProductDetailPage = ({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full bg-light-secondary">
-        <div className="text-center">
-          <div className="text-4xl mb-3">⏳</div>
-          <p className="text-neutral-500 text-sm">Loading product...</p>
-        </div>
+        <LoadingState message="Loading product..." />
       </div>
     );
   }
@@ -596,8 +609,8 @@ const ProductDetailPage = ({
   if (!product) {
     return (
       <div className="flex items-center justify-center h-full bg-light-secondary">
-        <div className="text-center space-y-3">
-          <div className="text-4xl">❌</div>
+        <div className="flex flex-col items-center justify-center gap-4">
+          <PackageX className="h-10 w-10 text-neutral-400" />
           <p className="text-neutral-500 text-sm">Product not found</p>
           <Button
             variant="outline"

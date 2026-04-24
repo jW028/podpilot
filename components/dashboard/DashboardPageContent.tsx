@@ -5,6 +5,7 @@ import StatCard from "./StatCard";
 import BusinessCard from "./BusinessCard";
 import Button from "@/components/ui/shared/Button";
 import DashboardHeader from "./DashboardHeader";
+import LoadingState from "../ui/shared/LoadingState";
 
 interface Business {
   id: string;
@@ -184,11 +185,8 @@ const DashboardPageContent = () => {
           )}
 
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-center">
-                <div className="text-4xl mb-3">⏳</div>
-                <p className="text-neutral-500">Loading businesses...</p>
-              </div>
+            <div className="flex items-center justify-center h-full">
+              <LoadingState message="Loading businesses..." />
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

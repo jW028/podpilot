@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Product } from "@/lib/types";
 import ProductCard from "@/components/ui/products/ProductCard";
 import Button from "@/components/ui/shared/Button";
+import LoadingState from "@/components/ui/shared/LoadingState";
 import { Box } from "lucide-react";
 
 interface ProductsPageProps {
@@ -38,7 +39,7 @@ const ProductsPageContent = ({
         const query = filterStatus !== "all" ? `?status=${filterStatus}` : "";
         const response = await fetch(
           `/api/business/${businessId}/products${query}`,
-          { cache: "no-store" }
+          { cache: "no-store" },
         );
 
         if (!response.ok) {
@@ -116,14 +117,8 @@ const ProductsPageContent = ({
           </div>
         )}
 
-        {/* TODO: use loading state component */}
         {isLoading ? (
-          <div className="flex items-center justify-center h-96">
-            <div className="text-center">
-              <div className="text-4xl mb-3">⏳</div>
-              <p className="text-neutral-500">Loading products...</p>
-            </div>
-          </div>
+          <LoadingState message="Loading products..." />
         ) : products.length == 0 ? (
           <div className="flex flex-col gap-4 items-center justify-center h-96">
             <div className="flex flex-col items-center justify-center gap-4">
