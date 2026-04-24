@@ -76,7 +76,8 @@ const styles = {
   aiBubble: "bg-neutral-100 text-dark max-w-[85%]",
   userBubble: "bg-dark text-light max-w-[80%] ml-auto whitespace-pre-wrap",
   frameworkCard: "bg-white border border-primary-300 rounded-xl p-4",
-  frameworkTitle: "text-xs uppercase tracking-wide text-primary-700 font-semibold",
+  frameworkTitle:
+    "text-xs uppercase tracking-wide text-primary-700 font-semibold",
   chatFooter: "p-4 border-t border-neutral-300 bg-white",
   textarea:
     "w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-light-primary bg-light min-h-24",
@@ -86,7 +87,9 @@ const styles = {
     "mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm",
 };
 
-const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => {
+const BusinessOnboardingPage = ({
+  businessId,
+}: BusinessOnboardingPageProps) => {
   const router = useRouter();
   const { user, session } = useAuth();
 
@@ -173,7 +176,9 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
       };
 
       if (!response.ok || !result.success) {
-        setError(result.message || "Could not confirm the business direction yet.");
+        setError(
+          result.message || "Could not confirm the business direction yet.",
+        );
         return;
       }
 
@@ -261,8 +266,8 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
       <div className="mb-8">
         <h1 className={styles.heading}>Business Onboarding</h1>
         <p className={styles.subtext}>
-          Chat with Business Genesis Agent to confirm the business feeling, theme,
-          vibe, and direction before moving to workflow.
+          Chat with Business Genesis Agent to confirm the business feeling,
+          theme, vibe, and direction before moving to workflow.
         </p>
       </div>
 
@@ -293,7 +298,9 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
               )}
               <div
                 className={`${styles.bubble} ${
-                  message.role === "assistant" ? styles.aiBubble : styles.userBubble
+                  message.role === "assistant"
+                    ? styles.aiBubble
+                    : styles.userBubble
                 }`}
               >
                 {message.role === "assistant" ? (
@@ -303,14 +310,18 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
                 )}
               </div>
               {message.role === "user" && (
-                <div className={`${styles.avatar} ${styles.userAvatar}`}>You</div>
+                <div className={`${styles.avatar} ${styles.userAvatar}`}>
+                  You
+                </div>
               )}
             </div>
           ))}
 
           {framework && (
             <div className={styles.frameworkCard}>
-              <p className={styles.frameworkTitle}>Confirmed Business Direction</p>
+              <p className={styles.frameworkTitle}>
+                Confirmed Business Direction
+              </p>
               <div className="mt-3 text-sm text-neutral-700 space-y-2">
                 <p>
                   <span className="font-semibold text-dark">Theme:</span>{" "}
@@ -333,7 +344,9 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
                   {framework.vibeKeywords.join(", ")}
                 </p>
                 <p>
-                  <span className="font-semibold text-dark">Malaysia Trend:</span>{" "}
+                  <span className="font-semibold text-dark">
+                    Malaysia Trend:
+                  </span>{" "}
                   {framework.malaysiaTrendNote}
                 </p>
                 <div className="pt-2 flex flex-wrap gap-3">
@@ -341,7 +354,9 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
                     variant="secondary"
                     size="sm"
                     onClick={() =>
-                      submitConfirmation("Yes, proceed with this business direction")
+                      submitConfirmation(
+                        "Yes, proceed with this business direction",
+                      )
                     }
                     disabled={isSubmitting}
                   >
@@ -388,9 +403,9 @@ const BusinessOnboardingPage = ({ businessId }: BusinessOnboardingPageProps) => 
             </Button>
           </div>
           <p className="text-xs text-neutral-500 mt-2">
-            Tip: once the direction looks good, reply naturally with confirmation
-            intent, for example &quot;yes, proceed with this business
-            direction&quot;.
+            Tip: once the direction looks good, reply naturally with
+            confirmation intent, for example &quot;yes, proceed with this
+            business direction&quot;.
           </p>
         </div>
       </div>
