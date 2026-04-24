@@ -1,7 +1,9 @@
 import 'dotenv/config';
+import axios from 'axios';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import type { LaunchProductInput, SuggestedPrices, PrintifyResult } from '@/lib/types';
+import { resolveBusinessPrintifyToken } from '@/lib/printify/credentials';
 import {
   performMarketResearch,
   createPrintifyProduct,
@@ -36,19 +38,21 @@ export async function runLaunchAgent({
   businessId,
   productId,
   productData,
+  shopId: requestedShopId,
   userMessage = null,
 }: {
   businessId: string;
   productId: string;
   productData: LaunchProductInput;
+  shopId?: string;
   userMessage?: string | null;
 }) {
   const glm = getGlmClient();
 
-  // 1. Load business context (get printify_shop_id)
+  // 1. Load business context (get printify_shop_id + sales_channels)
   const { data: business, error } = await supabase
     .from('businesses')
-    .select('id, name, printify_shop_id')
+    .select('id, name, printify_shop_id, sales_channels')
     .eq('id', businessId)
     .single();
 
@@ -56,10 +60,19 @@ export async function runLaunchAgent({
     throw new Error('Business not found');
   }
 
-  const shopId = business.printify_shop_id;
-  const printifyToken = process.env.PRINTIFY_DEV_TOKEN;
+  // Resolve shop ID: explicit request > first sales channel > legacy column
+  const salesChannels: Array<{ shop_id: string; title: string; channel: string }> =
+    Array.isArray(business.sales_channels) ? business.sales_channels : [];
+  const resolvedShopId =
+    requestedShopId ||
+    (salesChannels.length > 0 ? salesChannels[0].shop_id : business.printify_shop_id);
 
-  if (!printifyToken || !shopId) {
+  // Find the channel name for the resolved shop (used in signals)
+  const resolvedChannel = salesChannels.find((ch) => ch.shop_id === resolvedShopId);
+
+  const printifyToken = await resolveBusinessPrintifyToken(supabase, businessId);
+
+  if (!printifyToken || !resolvedShopId) {
     console.warn('[Launch Agent] Printify credentials missing, mock creation will be used.');
   }
 
@@ -102,12 +115,24 @@ export async function runLaunchAgent({
             productData,
             prices: args.prices,
             printifyToken: printifyToken!,
-            shopId: shopId!,
+            shopId: resolvedShopId!,
           });
           toolState.printifyResult = res;
           toolState.prices = args.prices;
           toolState.reasoning = args.reasoning;
-          
+
+          // Check for previous prices on this product to emit price_updated signal
+          const { data: prevLaunch } = await supabase
+            .from('product_launches')
+            .select('optimal_prices')
+            .eq('product_id', productId)
+            .neq('id', launchId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const oldPrices = prevLaunch?.optimal_prices as Record<string, number> | null;
+
           await supabase.from('product_launches').update({
             printify_product_id: res.product_id,
             optimal_prices: args.prices,
@@ -117,13 +142,37 @@ export async function runLaunchAgent({
             updated_at: new Date().toISOString()
           }).eq('id', launchId);
 
+          // Signal finance agent: price updated (only if previous prices differ)
+          if (oldPrices) {
+            const newPrices = args.prices as Record<string, number>;
+            const changedKey = Object.keys(newPrices).find(
+              (k) => oldPrices[k] !== undefined && oldPrices[k] !== newPrices[k]
+            );
+            if (changedKey) {
+              await supabase.from('workflows').insert({
+                business_id: businessId,
+                type: 'price_updated',
+                source_agent: 'launch_agent',
+                target_agent: 'finance_agent',
+                state: 'pending',
+                payload: {
+                  product_id: res.product_id,
+                  product_title: productData.name,
+                  old_price: oldPrices[changedKey],
+                  new_price: newPrices[changedKey],
+                  updated_at: new Date().toISOString(),
+                },
+              });
+            }
+          }
+
           return res;
         }
         case 'publishProductToSalesChannel': {
           const res = await publishProductToSalesChannel({
             productId: args.productId,
             printifyToken: printifyToken!,
-            shopId: shopId!,
+            shopId: resolvedShopId!,
             waitForPublish: false,
           });
           toolState.publishResult = res;
@@ -140,6 +189,7 @@ export async function runLaunchAgent({
               business_id: businessId,
               type: 'product_launch_publish',
               source_agent: 'launch_agent',
+              target_agent: 'launch_agent',
               state: 'pending',
               payload: {
                 launch_id: launchId,
@@ -154,6 +204,28 @@ export async function runLaunchAgent({
             await supabase.from('product_launches').update({
               external_product_id: res.external_product_id,
             }).eq('id', launchId);
+          }
+
+          // Signal finance agent: product launched
+          if (res.published || res.publish_status === 'published (mock)') {
+            const listedPrice = Object.values(toolState.prices || {}).find(
+              (v: any) => Number.isFinite(v) && v > 0
+            ) ?? 0;
+            await supabase.from('workflows').insert({
+              business_id: businessId,
+              type: 'product_launched',
+              source_agent: 'launch_agent',
+              target_agent: 'finance_agent',
+              state: 'pending',
+              payload: {
+                product_id: toolState.printifyResult?.product_id ?? args.productId,
+                product_title: productData.name,
+                base_cost: 0,
+                listed_price: listedPrice,
+                marketplace: resolvedChannel?.channel || 'Printify',
+                launched_at: new Date().toISOString(),
+              },
+            });
           }
 
           return res;
@@ -232,6 +304,133 @@ WORKFLOW — follow these steps in order:
     timestamp: new Date().toISOString(),
     final_message: finalInsights,
   };
+}
+
+// Background poll: updates product_launches row when Printify publish completes
+export async function pollPublishStatus(launchId: string) {
+  const { data: launch } = await supabase
+    .from('product_launches')
+    .select('id, business_id, printify_product_id, status, publish_status')
+    .eq('id', launchId)
+    .maybeSingle();
+
+  if (!launch || launch.status === 'published' || launch.status === 'failed') return;
+
+  const printifyToken = process.env.PRINTIFY_DEV_TOKEN;
+  if (!printifyToken || !launch.printify_product_id || launch.printify_product_id.startsWith('mock-pf-')) {
+    return;
+  }
+
+  // Resolve shop ID for this business
+  const { data: business } = await supabase
+    .from('businesses')
+    .select('printify_shop_id, sales_channels')
+    .eq('id', launch.business_id)
+    .maybeSingle();
+
+  const salesChannels: Array<{ shop_id: string }> = Array.isArray(business?.sales_channels)
+    ? business.sales_channels
+    : [];
+  const shopCandidates = Array.from(
+    new Set(
+      [
+        business?.printify_shop_id,
+        ...salesChannels.map((ch) => ch.shop_id),
+      ]
+        .map((id) => (id || '').trim())
+        .filter(Boolean)
+    )
+  );
+  if (shopCandidates.length === 0) return;
+
+  const maxAttempts = 24; // 24 * 5s = 2 minutes
+  const intervalMs = 5000;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+
+    try {
+      let lastNon404Error: { shopId: string; message: string } | null = null;
+
+      for (const shopId of shopCandidates) {
+        try {
+          const resp = await axios.get(
+            `https://api.printify.com/v1/shops/${shopId}/products/${launch.printify_product_id}.json`,
+            {
+              headers: {
+                Authorization: `Bearer ${printifyToken}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'PODCoPilot-Hackathon',
+              },
+              timeout: 15_000,
+            }
+          );
+
+          const isPublished = resp.data?.is_published;
+          const publishingStatus =
+            resp.data?.publishing_status ||
+            resp.data?.publishing?.status ||
+            resp.data?.publishing ||
+            resp.data?.status;
+
+          if (isPublished) {
+            await supabase
+              .from('product_launches')
+              .update({
+                status: 'published',
+                publish_status: 'published',
+                external_product_id: resp.data?.external?.id,
+                launched_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', launchId);
+            console.log(`[PollPublish] ${launchId} → published (shop ${shopId})`);
+            return;
+          }
+
+          if (typeof publishingStatus === 'string' && /fail|error|rejected/i.test(publishingStatus)) {
+            await supabase
+              .from('product_launches')
+              .update({
+                status: 'failed',
+                publish_status: `failed (${publishingStatus})`,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', launchId);
+            console.log(`[PollPublish] ${launchId} → failed: ${publishingStatus} (shop ${shopId})`);
+            return;
+          }
+
+          // Product exists on this shop and is still publishing; continue attempts.
+          lastNon404Error = null;
+          break;
+        } catch (shopErr: any) {
+          const status = shopErr?.response?.status;
+          const msg = shopErr?.message || 'unknown error';
+          // Product may belong to another shop; keep trying candidates.
+          if (status === 400 || status === 404) {
+            continue;
+          }
+          lastNon404Error = { shopId, message: msg };
+        }
+      }
+
+      if (lastNon404Error) {
+        console.error(
+          `[PollPublish] attempt ${attempt + 1}: shop ${lastNon404Error.shopId} error ${lastNon404Error.message}`
+        );
+      }
+    } catch (err: any) {
+      console.error(`[PollPublish] Poll error attempt ${attempt + 1}:`, err.message);
+    }
+  }
+
+  // Timed out
+  await supabase.from('product_launches').update({
+    publish_status: 'publishing (timed out)',
+    updated_at: new Date().toISOString(),
+  }).eq('id', launchId);
+  console.log(`[PollPublish] ${launchId} → timed out`);
 }
 
 // ====================== TEST / MOCK (run with ts-node or in API route) ======================
