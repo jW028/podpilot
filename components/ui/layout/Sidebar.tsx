@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
@@ -125,6 +125,41 @@ const SYSTEM_NAV: NavItem[] = [
 const Sidebar = ({ businessId }: SidebarProps = {}) => {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
+  
+  const [businesses, setBusinesses] = useState<{id: string, name: string}[]>([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchBusinesses = async () => {
+      try {
+        const res = await fetch("/api/businesses");
+        if (res.ok) {
+          const data = await res.json();
+          setBusinesses(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch businesses", err);
+      }
+    };
+    fetchBusinesses();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const currentBusiness = businesses.find((b) => b.id === businessId) || businesses[0];
+  const businessName = currentBusiness?.name || (businessId ? "Loading..." : "Select Business");
+  const businessInitials = currentBusiness?.name
+    ? currentBusiness.name.slice(0, 2).toUpperCase()
+    : "??";
 
   const displayName = user?.user_metadata?.full_name || user?.email || "User";
   const initials = displayName
@@ -193,34 +228,68 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
       <div className={sidebarStyles.header}>
         <Logo />
       </div>
-      <button className={sidebarStyles.businessSwitcher}>
-        <div className={sidebarStyles.businessPill}>
-          <div className="flex items-center gap-2.5">
-            <div className={sidebarStyles.businessAvatar}>MK</div>
-            <div className="flex flex-col gap-1">
-              <div className={sidebarStyles.businessName}>MokiPrints</div>
-              <div className={sidebarStyles.businessSubtext}>
-                {numberOfActiveAgents} agents active
+      <div className={`${sidebarStyles.businessSwitcher} relative`} ref={dropdownRef}>
+        <button 
+          className="w-full text-left"
+          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+        >
+          <div className={sidebarStyles.businessPill}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={sidebarStyles.businessAvatar}>{businessInitials}</div>
+              <div className="flex flex-col gap-1 min-w-0">
+                <div className={`${sidebarStyles.businessName} truncate`}>{businessName}</div>
+                <div className={sidebarStyles.businessSubtext}>
+                  {numberOfActiveAgents} agents active
+                </div>
               </div>
             </div>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              className={`${sidebarStyles.businessChevron} transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
+            >
+              <path
+                d="M3 4.5L6 7.5L9 4.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            className={sidebarStyles.businessChevron}
-          >
-            <path
-              d="M3 4.5L6 7.5L9 4.5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
-      </button>
+        </button>
+
+        {isDropdownOpen && (
+          <div className="absolute top-full left-3 right-3 mt-1 bg-white border border-neutral-200 rounded-xl shadow-lg z-50 overflow-hidden">
+            <div className="p-1 max-h-48 overflow-y-auto">
+              {businesses.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-neutral-500 text-center">Loading...</div>
+              ) : (
+                businesses.map((b) => (
+                  <Link
+                    key={b.id}
+                    href={`/business/${b.id}/workflow`}
+                    onClick={() => setIsDropdownOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-light-secondary transition-colors"
+                  >
+                    <div className="w-6 h-6 rounded bg-gradient-to-br from-primary-300 to-primary-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                      {b.name.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="text-xs font-medium text-dark truncate flex-1">
+                      {b.name}
+                    </div>
+                    {b.id === businessId && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    )}
+                  </Link>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Nav */}
       <nav className={sidebarStyles.nav}>
