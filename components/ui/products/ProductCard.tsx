@@ -41,6 +41,7 @@ const ProductCard = ({ product, businessId, onDelete }: ProductCardProps) => {
       try {
         const response = await fetch(
           `/api/business/${businessId}/products/${product.id}/image`,
+          { cache: "no-store" }
         );
         if (response.ok) {
           const data = await response.json();
@@ -80,7 +81,7 @@ const ProductCard = ({ product, businessId, onDelete }: ProductCardProps) => {
         </div>
 
         {/* description */}
-        <div className="p-4 space-y-2 bg-light rounded-b-xl">
+        <div className="p-4 bg-light rounded-b-xl h-24 flex flex-col justify-between">
           <div className="space-y-0.5">
             <h1 className="text-xs font-semibold">{product.title}</h1>
             <p className="text-[12px] text-neutral-500 line-clamp-1">

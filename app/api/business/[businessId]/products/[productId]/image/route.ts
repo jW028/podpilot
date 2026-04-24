@@ -2,6 +2,8 @@ import { getServerSupabase } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 interface RouteParams {
   businessId: string;
   productId: string;
@@ -115,23 +117,39 @@ export async function POST(
 
     // Determine file extension
     const ext = file.name.split(".").pop() || "png";
-    const fileName = `${productId}.${ext}`;
+    const timestamp = Date.now();
+    const fileName = `${productId}-${timestamp}.${ext}`;
 
     // Use service role client for storage operations
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const serviceClient = createClient(supabaseUrl, supabaseServiceRole);
 
+    // First, list and delete any existing files for this product
+    const { data: existingFiles } = await serviceClient.storage
+      .from("products")
+      .list("", { search: productId });
+
+    if (existingFiles && existingFiles.length > 0) {
+      const filesToDelete = existingFiles
+        .filter((f) => f.name.startsWith(productId))
+        .map((f) => f.name);
+      
+      if (filesToDelete.length > 0) {
+        await serviceClient.storage.from("products").remove(filesToDelete);
+      }
+    }
+
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Upload to Supabase storage (upsert to overwrite existing)
+    // Upload to Supabase storage
     const { error: uploadError } = await serviceClient.storage
       .from("products")
       .upload(fileName, buffer, {
         contentType: file.type || "image/png",
-        upsert: true,
+        upsert: false,
       });
 
     if (uploadError) {

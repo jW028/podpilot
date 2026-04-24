@@ -38,6 +38,7 @@ const ProductsPageContent = ({
         const query = filterStatus !== "all" ? `?status=${filterStatus}` : "";
         const response = await fetch(
           `/api/business/${businessId}/products${query}`,
+          { cache: "no-store" }
         );
 
         if (!response.ok) {

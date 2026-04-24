@@ -60,7 +60,9 @@ const ProductCanvas = ({
       <div className="flex-1 overflow-auto p-6">
         {canvasBlocks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <p className="text-neutral-500 mb-1 font-medium text-sm">No fields yet</p>
+            <p className="text-neutral-500 mb-1 font-medium text-sm">
+              No fields yet
+            </p>
             <p className="text-xs text-neutral-400">
               Describe your product idea to the Design Agent to get started
             </p>

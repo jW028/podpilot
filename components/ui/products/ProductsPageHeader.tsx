@@ -31,12 +31,12 @@ const ProductsPageHeader = ({
         </div>
       </div>
       <div className="flex gap-2.5">
-        <Button variant="outline" size="sm">
+        {/* <Button variant="outline" size="sm">
           Filter
         </Button>
         <Button variant="secondary" size="sm" className="space-x-1.5">
           <IoSparkles /> <p>AI Generate</p>
-        </Button>
+        </Button> */}
         <Button
           variant="primary"
           size="sm"

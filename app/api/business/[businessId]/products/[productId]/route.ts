@@ -1,4 +1,5 @@
 import { getServerSupabase } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
 interface RouteParams {
@@ -116,7 +117,8 @@ export async function PUT(
     if (body.title !== undefined) updatePayload.title = body.title;
     if (body.description !== undefined)
       updatePayload.description = body.description;
-    if (body.attributes !== undefined) updatePayload.attributes = body.attributes;
+    if (body.attributes !== undefined)
+      updatePayload.attributes = body.attributes;
     if (body.design_path !== undefined)
       updatePayload.design_path = body.design_path;
     if (body.status !== undefined) updatePayload.status = body.status;
@@ -188,14 +190,36 @@ export async function DELETE(
       return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
-    // Delete product
-    const { error } = await supabase
+    // Delete product using service role since we already verified ownership
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const serviceClient = createClient(supabaseUrl, supabaseServiceRole);
+
+    const { error } = await serviceClient
       .from("products")
       .delete()
       .eq("id", productId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Delete associated image from bucket if it exists
+    try {
+      const { data: files } = await serviceClient.storage
+        .from("products")
+        .list("", { search: productId });
+
+      const matchingFile = files?.find((f) => f.name.startsWith(productId));
+
+      if (matchingFile) {
+        await serviceClient.storage
+          .from("products")
+          .remove([matchingFile.name]);
+      }
+    } catch (imageError) {
+      console.error("Failed to delete product image from bucket:", imageError);
+      // Non-fatal error, we still deleted the DB row
     }
 
     return NextResponse.json({ success: true });

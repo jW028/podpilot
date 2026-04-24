@@ -19,7 +19,13 @@ import {
 export interface Block {
   id: string;
   name: string;
-  type: "text" | "textarea" | "number" | "image" | "selection";
+  type:
+    | "text"
+    | "textarea"
+    | "number"
+    | "image"
+    | "selection"
+    | "multi-selection";
   label: string;
   value: string | number | string[] | null;
   placeholder?: string;
@@ -50,6 +56,7 @@ const getTypeIcon = (type: string, locked?: boolean) => {
     case "image":
       return <MdImage className="text-primary-500 text-sm" />;
     case "selection":
+    case "multi-selection":
       return <MdList className="text-primary-500 text-sm" />;
     default:
       return <MdTextFields className="text-primary-500 text-sm" />;
@@ -99,12 +106,16 @@ const EditableBlock = ({
       console.error("Image upload failed:", error);
     } finally {
       setIsUploading(false);
+      // Reset so re-selecting the same file triggers onChange
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const displayValue = localValue
-    ? String(localValue).substring(0, 60)
-    : null;
+  const displayValue = Array.isArray(localValue)
+    ? localValue.join(", ").substring(0, 60) || null
+    : localValue
+      ? String(localValue).substring(0, 60)
+      : null;
 
   const isLocked = block.locked === true;
 
@@ -157,7 +168,9 @@ const EditableBlock = ({
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-neutral-400 truncate">{block.name}</p>
+              <p className="text-[10px] text-neutral-400 truncate">
+                {block.name}
+              </p>
             </div>
 
             {/* Edit / close toggle — hidden for locked fields */}
@@ -207,13 +220,14 @@ const EditableBlock = ({
               {block.type === "number" && (
                 <input
                   type="number"
+                  step="0.01"
                   value={typeof localValue === "number" ? localValue : ""}
                   onChange={(e) =>
                     handleValueChange(
                       e.target.value ? parseFloat(e.target.value) : 0,
                     )
                   }
-                  placeholder="Enter number..."
+                  placeholder={block.placeholder || "Enter number..."}
                   className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg bg-light-secondary text-dark text-xs focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
                   autoFocus
                 />
@@ -280,6 +294,52 @@ const EditableBlock = ({
                 </select>
               )}
 
+              {block.type === "multi-selection" && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-neutral-400">
+                    Select all that apply
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {block.options?.map((opt) => {
+                      const selected =
+                        Array.isArray(localValue) && localValue.includes(opt);
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => {
+                            const current = Array.isArray(localValue)
+                              ? localValue
+                              : [];
+                            handleValueChange(
+                              selected
+                                ? current.filter((v) => v !== opt)
+                                : [...current, opt],
+                            );
+                          }}
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                            selected
+                              ? "bg-primary-500 text-dark border-primary-500"
+                              : "bg-white text-neutral-500 border-neutral-300 hover:border-primary-400 hover:text-primary-600"
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {Array.isArray(localValue) && localValue.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleValueChange([])}
+                      className="text-[10px] text-neutral-400 hover:text-red-500 transition-colors"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Save action */}
               <button
                 onClick={handleUpdate}
@@ -292,8 +352,18 @@ const EditableBlock = ({
           ) : (
             /* ── Value Preview ──────────────────────────── */
             <div className="mt-1 pb-1 border-b border-neutral-200 min-h-[20px]">
-              {block.type === "image" && localValue && typeof localValue === "string" ? (
-                <div className="rounded-lg overflow-hidden border border-neutral-200">
+              {block.type === "image" &&
+              localValue &&
+              typeof localValue === "string" ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                  className="relative w-full rounded-lg overflow-hidden border border-neutral-200 group cursor-pointer"
+                  title="Click to change image"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={localValue}
@@ -303,7 +373,35 @@ const EditableBlock = ({
                       (e.target as HTMLImageElement).style.display = "none";
                     }}
                   />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
+                    <MdCloudUpload className="text-white text-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  {/* Hidden file input for collapsed-state uploads */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                </button>
+              ) : block.type === "multi-selection" &&
+                Array.isArray(localValue) &&
+                localValue.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {localValue.map((v) => (
+                    <span
+                      key={v}
+                      className="px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full text-[10px] font-medium"
+                    >
+                      {v}
+                    </span>
+                  ))}
                 </div>
+              ) : block.name === "price" && typeof localValue === "number" ? (
+                <p className="text-xs text-dark truncate">
+                  ${localValue.toFixed(2)}
+                </p>
               ) : displayValue ? (
                 <p className="text-xs text-dark truncate">{displayValue}</p>
               ) : (
