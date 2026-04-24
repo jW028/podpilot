@@ -6,7 +6,7 @@ import { Product } from "@/lib/types";
 import ProductCard from "@/components/ui/products/ProductCard";
 import Button from "@/components/ui/shared/Button";
 import LoadingState from "@/components/ui/shared/LoadingState";
-import { Box } from "lucide-react";
+import { Box, Sparkles, ChevronDown } from "lucide-react";
 
 interface ProductsPageProps {
   businessId: string;
@@ -81,9 +81,10 @@ const ProductsPageContent = ({
   };
 
   return (
-    <div className="flex">
-      <div className="bg-light-secondary h-screen overflow-y-auto w-8/12">
-        <div className="p-8">
+    <div className="flex min-h-[calc(100vh-80px)]">
+      {/* main products panel */}
+      <div className="bg-light-secondary w-8/12 p-8">
+        <div>
           {/* Status Filters */}
           <div className="flex gap-2 flex-wrap">
             {(
@@ -130,7 +131,7 @@ const ProductsPageContent = ({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
             {products.map((product) => (
               <div key={product.id} className="relative group">
                 <ProductCard
@@ -145,8 +146,95 @@ const ProductsPageContent = ({
       </div>
 
       {/* right panel design agent */}
-      <div className="w-4/12 flex justify-center items-center text-xs text-neutral-500">
-        to implement ai chatbot
+      <div className="w-4/12 bg-[#F9F9F8] border-l border-[#E8E7E2] p-[24px]">
+        {/* AI Insights */}
+        <div className="bg-[#1C1C1A] rounded-[16px] p-[20px] mb-[24px] text-[#FAFAF8] shadow-sm">
+          <div className="flex items-start gap-[8px] mb-[20px]">
+            <Sparkles className="h-5 w-5 text-[#FAFAF8] shrink-0 mt-[2px]" />
+            <div>
+              <h2 className="font-serif font-bold text-[18px] leading-tight">
+                AI Insights
+              </h2>
+              <p className="text-[12px] text-[#FAFAF8]/60 mt-[2px]">
+                Product Agent analysis
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-[12px] mb-[24px]">
+            <div className="bg-[#2A2A27] border border-[#FAFAF8]/5 rounded-[10px] p-[14px] text-[13px] leading-relaxed relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C9A84C]"></div>
+              <span className="text-[#C9A84C] font-semibold">Trending:</span>{" "}
+              Minimalist bags are up 34% on Shopee this week. Consider creating
+              2-3 more tote variations.
+            </div>
+
+            <div className="bg-[#2A2A27] border border-[#FAFAF8]/5 rounded-[10px] p-[14px] text-[13px] leading-relaxed relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C9A84C]"></div>
+              <span className="text-[#C9A84C] font-semibold">
+                Underperforming:
+              </span>{" "}
+              "Grid Phone Case" has low CTR. Suggest refreshing the title for
+              SEO.
+            </div>
+
+            <div className="bg-[#2A2A27] border border-[#FAFAF8]/5 rounded-[10px] p-[14px] text-[13px] leading-relaxed relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C9A84C]"></div>
+              <span className="text-[#C9A84C] font-semibold">Opportunity:</span>{" "}
+              You have no products in the RM 80-120 range. Premium items convert
+              well for your audience.
+            </div>
+          </div>
+
+          <div className="flex gap-[12px]">
+            <button className="flex-1 bg-[#C9A84C] hover:bg-[#b5953e] text-[#141412] font-semibold text-[13px] py-[10px] rounded-[8px] transition-colors">
+              Generate now
+            </button>
+            <button className="flex-1 bg-transparent hover:bg-[#2A2A27] border border-[#FAFAF8]/20 text-[#FAFAF8] font-semibold text-[13px] py-[10px] rounded-[8px] transition-colors">
+              See all
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Generate */}
+        <div className="bg-white border border-[#E8E7E2] rounded-[16px] p-[24px] shadow-sm">
+          <h2 className="font-serif font-bold text-[20px] text-[#141412] mb-[24px]">
+            Quick Generate
+          </h2>
+
+          <div className="space-y-[20px]">
+            <div>
+              <label className="block text-[11px] font-semibold text-[#6B6A64] tracking-[0.06em] uppercase mb-[8px]">
+                Product Type
+              </label>
+              <div className="relative">
+                <select className="w-full appearance-none bg-transparent border border-[#E8E7E2] rounded-[8px] px-[16px] py-[12px] text-[14px] text-[#141412] outline-none focus:border-[#C9A84C] transition-colors">
+                  <option>Phone Case</option>
+                  <option>Tote Bag</option>
+                  <option>T-Shirt</option>
+                  <option>Mug</option>
+                </select>
+                <ChevronDown className="absolute right-[16px] top-[14px] h-4 w-4 text-[#6B6A64] pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-[#6B6A64] tracking-[0.06em] uppercase mb-[8px]">
+                Describe your idea
+              </label>
+              <textarea
+                className="w-full bg-transparent border border-[#E8E7E2] rounded-[8px] px-[16px] py-[12px] text-[14px] text-[#141412] outline-none focus:border-[#C9A84C] transition-colors resize-none placeholder:text-[#9E9D97]"
+                rows={4}
+                placeholder="e.g. minimalist mountain landscape with thin lines..."
+              ></textarea>
+            </div>
+
+            <button className="w-full bg-[#C9A84C] hover:bg-[#b5953e] text-[#141412] font-semibold text-[14px] py-[12px] rounded-[8px] transition-colors flex items-center justify-center gap-[8px]">
+              <Sparkles className="h-4 w-4" />
+              Generate with AI
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
