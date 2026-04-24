@@ -1,5 +1,18 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { resolveBusinessPrintifyToken } from '@/lib/printify/credentials';
+
+type PrintifyShop = {
+  id: string | number;
+  title?: string;
+  sales_channel?: string;
+};
+
+type SalesChannel = {
+  shop_id: string;
+  title: string;
+  channel: string;
+};
 
 export async function POST(request: Request) {
   try {
@@ -14,7 +27,7 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // Get Printify token — try user_integrations first, then env fallback
+    // Get Printify token from encrypted business credential (or env fallback)
     const { data: business } = await supabase
       .from('businesses')
       .select('id, user_id')
@@ -25,20 +38,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Business not found.' }, { status: 404 });
     }
 
-    let printifyToken = process.env.PRINTIFY_DEV_TOKEN || '';
-
-    // Try to get token from user_integrations
-    if (!printifyToken && business.user_id) {
-      const { data: integration } = await supabase
-        .from('user_integrations')
-        .select('access_token')
-        .eq('user_id', business.user_id)
-        .eq('provider', 'printify')
-        .maybeSingle();
-      if (integration?.access_token) {
-        printifyToken = integration.access_token;
-      }
-    }
+    const printifyToken = await resolveBusinessPrintifyToken(supabase, businessId);
 
     if (!printifyToken) {
       return NextResponse.json(
@@ -62,11 +62,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const shopsData = await shopsRes.json();
+    const shopsData = await shopsRes.json() as { data?: PrintifyShop[] } | PrintifyShop[];
     const shops = Array.isArray(shopsData) ? shopsData : (shopsData.data || []);
-    console.log(`[Refresh Channels] Found ${shops.length} shop(s):`, JSON.stringify(shops.map((s: any) => ({ id: s.id, title: s.title, sales_channel: s.sales_channel }))));
+    console.log(`[Refresh Channels] Found ${shops.length} shop(s):`, JSON.stringify(shops.map((s) => ({ id: s.id, title: s.title, sales_channel: s.sales_channel }))));
 
-    const salesChannels = shops.map((shop: any) => ({
+    const salesChannels: SalesChannel[] = shops.map((shop) => ({
       shop_id: String(shop.id),
       title: shop.title || '',
       channel: shop.sales_channel || 'disconnected',
@@ -90,10 +90,11 @@ export async function POST(request: Request) {
     console.log('[Refresh Channels] Updated sales_channels for business', businessId);
 
     return NextResponse.json({ channels: salesChannels }, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal Server Error';
     console.error('[API] Refresh Channels Error:', error);
     return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
+      { error: message },
       { status: 500 }
     );
   }

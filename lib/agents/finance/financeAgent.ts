@@ -7,6 +7,7 @@ import {
   TOOL_DEFINITIONS,
 } from './tools';
 import { handleFinanceSignals } from '../orchestrator/signalHandler';
+import { processIncomingMessages } from './receiveHandler';
 
 // GLM uses the OpenAI SDK — just swap the base URL
 function getGlmClient(): OpenAI {
@@ -29,6 +30,13 @@ const supabase = createClient(
 // ─── Main agent entry point ────────────────────────────────────────────────────
 export async function runFinanceAgent({ businessId, days = 30, userMessage = null }: any) {
   const glm = getGlmClient();
+
+  // Step 0: Process any incoming messages from other agents
+  const incoming = await processIncomingMessages(businessId, supabase);
+  if (incoming.processed > 0) {
+    console.log(`[FinanceAgent] Processed ${incoming.processed} incoming messages: ${incoming.types.join(', ')}`);
+  }
+
   // 1. Load business context (get Printify token + shop ID from Supabase)
   const { data: business, error } = await supabase
     .from('businesses')
@@ -43,17 +51,19 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
   // Using the PRINTIFY_DEV_TOKEN from .env file for integration.
   const printifyToken = process.env.PRINTIFY_DEV_TOKEN;
 
-  // 2. Check cache FIRST — serve cached snapshot even without Printify credentials.
-  //    This allows mock/seeded data to load during development without a live Printify token.
-  const today = new Date().toISOString().split('T')[0];
+  // 2. Check cache FIRST — serve the most recent snapshot (within last 7 days).
+  //    Using a 7-day window instead of strict today-only so mock/seeded data always loads
+  //    even when the agent hasn't run today yet (e.g. no live Printify token in dev).
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-  // FIX #5: Use .maybeSingle() instead of .single().
   const { data: cached, error: cacheError } = await supabase
     .from('finance_snapshots')
     .select('*')
     .eq('business_id', businessId)
-    .eq('snapshot_date', today)
     .eq('period', `${days}d`)
+    .gte('snapshot_date', sevenDaysAgo)
+    .order('snapshot_date', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (cacheError) {
@@ -137,7 +147,7 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await glm.chat.completions.create({
-      model: process.env.GLM_MODEL || 'glm-4.5',
+      model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
       messages,
       tools: TOOL_DEFINITIONS as any,
       tool_choice: 'auto',
@@ -174,6 +184,7 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
 
   // 6. Save snapshot to Supabase
   if (toolState.metrics) {
+    const today = new Date().toISOString().split('T')[0];
     const upsertData: any = {
       business_id: businessId,
       snapshot_date: today,

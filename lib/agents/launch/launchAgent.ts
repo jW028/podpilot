@@ -3,6 +3,7 @@ import axios from 'axios';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import type { LaunchProductInput, SuggestedPrices, PrintifyResult } from '@/lib/types';
+import { resolveBusinessPrintifyToken } from '@/lib/printify/credentials';
 import {
   performMarketResearch,
   createPrintifyProduct,
@@ -69,7 +70,7 @@ export async function runLaunchAgent({
   // Find the channel name for the resolved shop (used in signals)
   const resolvedChannel = salesChannels.find((ch) => ch.shop_id === resolvedShopId);
 
-  const printifyToken = process.env.PRINTIFY_DEV_TOKEN;
+  const printifyToken = await resolveBusinessPrintifyToken(supabase, businessId);
 
   if (!printifyToken || !resolvedShopId) {
     console.warn('[Launch Agent] Printify credentials missing, mock creation will be used.');
