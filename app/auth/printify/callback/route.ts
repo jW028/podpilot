@@ -94,6 +94,13 @@ export async function GET(request: NextRequest) {
     // Use the first shop or you could implement shop selection
     const primaryShop = shops[0];
 
+    // Build sales_channels array from all shops
+    const salesChannels = shops.map((shop: any) => ({
+      shop_id: String(shop.id),
+      title: shop.title || '',
+      channel: shop.sales_channel || 'disconnected',
+    }));
+
     // Create/update user in Supabase with Printify info
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -131,6 +138,7 @@ export async function GET(request: NextRequest) {
               printify_access_token: accessToken,
               printify_shop_id: primaryShop.id,
               printify_shop_title: primaryShop.title,
+              printify_sales_channels: salesChannels,
             },
           },
         });
@@ -165,6 +173,7 @@ export async function GET(request: NextRequest) {
           printify_access_token: accessToken,
           printify_shop_id: primaryShop.id,
           printify_shop_title: primaryShop.title,
+          printify_sales_channels: salesChannels,
         },
       });
 
@@ -181,6 +190,24 @@ export async function GET(request: NextRequest) {
           connected_at: new Date().toISOString(),
         })
         .throwOnError();
+
+      // Update sales_channels on the user's business
+      const { data: businesses } = await supabase
+        .from("businesses")
+        .select("id")
+        .eq("user_id", user.id)
+        .limit(1);
+
+      if (businesses && businesses.length > 0) {
+        await supabase
+          .from("businesses")
+          .update({
+            sales_channels: salesChannels,
+            printify_shop_id: String(primaryShop.id),
+            marketplace: primaryShop.sales_channel || primaryShop.title,
+          })
+          .eq("id", businesses[0].id);
+      }
     }
 
     // Clean up state cookie
