@@ -334,13 +334,20 @@ ${insights}`,
 </html>`;
 
     // ── Convert HTML → PDF via headless Chromium ───────────────────────
-    const executablePath = await chromium.executablePath(
-      'https://github.com/Sparticuz/chromium/releases/download/v147.0.0/chromium-v147.0.0-pack.tar'
-    );
+    const isLocal = process.env.NODE_ENV === 'development';
+    
+    let executablePath;
+    if (isLocal) {
+      executablePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+    } else {
+      executablePath = await chromium.executablePath(
+        'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'
+      );
+    }
 
     const browser = await puppeteer.launch({
       args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
+      defaultViewport: (chromium as any).defaultViewport,
       executablePath,
       headless: true,
     });
@@ -361,7 +368,7 @@ ${insights}`,
     }
 
     const date = new Date().toISOString().split('T')[0];
-    return new Response(pdfBuffer, {
+    return new Response(pdfBuffer as any, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="finance-report-${businessId}-${date}.pdf"`,
