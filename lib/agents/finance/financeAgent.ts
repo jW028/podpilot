@@ -28,7 +28,7 @@ const supabase = createClient(
 );
 
 // ─── Main agent entry point ────────────────────────────────────────────────────
-export async function runFinanceAgent({ businessId, days = 30, userMessage = null }: any) {
+export async function runFinanceAgent({ businessId, days = 30, userMessage = null }: { businessId: string; days?: number; userMessage?: string | null }) {
   const glm = getGlmClient();
 
   // Step 0: Process any incoming messages from other agents
@@ -86,10 +86,10 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
   }
 
   // 4. Build the tool executor — the GLM agent will call these by name
-  const toolState: any = {};  // { orders: [...], metrics: { summary, by_product } }
+  const toolState: { metrics?: unknown; signals?: unknown; [key: string]: unknown } = {};  // { orders: [...], metrics: { summary, by_product } }
   const toolContext = { printifyToken, shopId, days, toolState };
 
-  async function executeTool(name: string, args: any) {
+  async function executeTool(name: string, args: Record<string, unknown>) {
     try {
       switch (name) {
         case 'fetchPrintifyOrders':
@@ -102,9 +102,10 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
         default:
           return { error: `Unknown tool: ${name}. Available tools: fetchPrintifyOrders, calculateProfitMetrics, detectAnomalies` };
       }
-    } catch (err: any) {
-      console.error(`[Finance Agent] Tool ${name} failed:`, err.message);
-      return { error: err.message, tool: name, recoverable: true };
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(`[Finance Agent] Tool ${name} failed:`, errorMessage);
+      return { error: errorMessage, tool: name, recoverable: true };
     }
   }
 
@@ -132,7 +133,7 @@ FINAL RESPONSE FORMAT:
 You are READ-ONLY. Produce analysis only — do not attempt to modify listings or execute actions.`;
 
   // 5. Run the agentic tool-calling loop
-  const messages: any[] = [
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
@@ -141,15 +142,15 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
   ];
 
   let finalInsights = '';
-  let finalMetrics: any = null;
-  let finalSignals: any = null;
+  let finalMetrics: unknown = null;
+  let finalSignals: { signals?: unknown[]; alerts?: unknown[] } | null = null;
   const MAX_ITERATIONS = 6;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await glm.chat.completions.create({
       model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
       messages,
-      tools: TOOL_DEFINITIONS as any,
+      tools: TOOL_DEFINITIONS as OpenAI.Chat.ChatCompletionTool[],
       tool_choice: 'auto',
       max_tokens: 2048,
       temperature: 0.4,
@@ -185,7 +186,7 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
   // 6. Save snapshot to Supabase
   if (toolState.metrics) {
     const today = new Date().toISOString().split('T')[0];
-    const upsertData: any = {
+    const upsertData: Record<string, unknown> = {
       business_id: businessId,
       snapshot_date: today,
       period: `${days}d`,
@@ -211,7 +212,7 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
       },
     });
 
-    if (finalSignals?.signals?.length > 0) {
+    if (finalSignals?.signals && finalSignals.signals.length > 0) {
        await handleFinanceSignals({ businessId, signals: finalSignals.signals, supabase });
     }
   }

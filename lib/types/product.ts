@@ -1,9 +1,13 @@
-export type AttributeType = "text" | "number" | "image" | "selection";
+export type AttributeType = "text" | "textarea" | "number" | "image" | "selection";
 
 export type Attribute = {
   type: AttributeType;
   value: string | number | string[];
   label?: string;
+  placeholder?: string;
+  options?: string[];
+  locked?: boolean;
+  required?: boolean;
 };
 
 export type ProductAttributes = Record<string, Attribute>;
@@ -43,6 +47,7 @@ export type CreateProductInput = {
   description?: string;
   attributes?: ProductAttributes;
   design_path?: string;
+  price?: number;
   status?: "draft" | "designing" | "ready" | "pushed" | "published" | "retired";
 };
 

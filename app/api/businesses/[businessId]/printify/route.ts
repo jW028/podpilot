@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { decryptPrintifyToken, encryptPrintifyToken, maskPrintifyToken, normalizePrintifyTokenInput } from '@/lib/printify/credentials';
 
@@ -64,7 +64,7 @@ async function getAuthorizedSupabase(request: NextRequest) {
   return { serviceClient, user };
 }
 
-async function assertBusinessOwnership(serviceClient: ReturnType<typeof createClient>, businessId: string, userId: string): Promise<OwnedBusiness> {
+async function assertBusinessOwnership(serviceClient: SupabaseClient, businessId: string, userId: string): Promise<OwnedBusiness> {
   const { data: business, error } = await serviceClient
     .from('businesses')
     .select('id, user_id, printify_pat_hint, printify_shop_id, sales_channels')
@@ -79,7 +79,7 @@ async function assertBusinessOwnership(serviceClient: ReturnType<typeof createCl
     throw new Error('Business not found.');
   }
 
-  if (business.user_id !== userId) {
+  if ((business as OwnedBusiness).user_id !== userId) {
     throw new Error('You do not have access to this business.');
   }
 

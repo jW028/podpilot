@@ -10,6 +10,7 @@ interface ProductCanvasProps {
   onBlockRemove: (blockId: string) => void;
   onBlockReorder?: (blocks: Block[]) => void;
   onBlockAdd?: (block: Block) => void;
+  onImageUpload?: (file: File) => Promise<string | null>;
 }
 
 const ProductCanvas = ({
@@ -17,11 +18,15 @@ const ProductCanvas = ({
   onBlockUpdate,
   onBlockRemove,
   onBlockReorder,
+  onImageUpload,
 }: ProductCanvasProps) => {
   const [canvasBlocks, setCanvasBlocks] = useState<Block[]>(blocks);
 
   useEffect(() => {
-    setCanvasBlocks(blocks);
+    const timer = setTimeout(() => {
+      setCanvasBlocks(blocks);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [blocks]);
 
   const handleDragEnd = (result: DropResult) => {
@@ -57,7 +62,7 @@ const ProductCanvas = ({
           <div className="flex flex-col items-center justify-center h-full text-center">
             <p className="text-neutral-500 mb-1 font-medium text-sm">No fields yet</p>
             <p className="text-xs text-neutral-400">
-              Select a Printify product from the Design Agent to populate fields
+              Describe your product idea to the Design Agent to get started
             </p>
           </div>
         ) : (
@@ -80,6 +85,7 @@ const ProductCanvas = ({
                         index={index}
                         onUpdate={onBlockUpdate}
                         onRemove={onBlockRemove}
+                        onImageUpload={onImageUpload}
                       />
                     </div>
                   ))}

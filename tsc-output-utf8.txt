@@ -1,0 +1,55 @@
+﻿app/api/agents/finance/report/route.ts(204,57): error TS2538: Type 'undefined' cannot be used as an index type.
+app/api/agents/finance/report/route.ts(204,122): error TS2538: Type 'undefined' cannot be used as an index type.
+app/api/agents/finance/report/route.ts(211,77): error TS2345: Argument of type 'string | 0' is not assignable to parameter of type 'string'.
+  Type 'number' is not assignable to type 'string'.
+app/api/agents/finance/report/route.ts(227,19): error TS2339: Property 'priority' does not exist on type 'SignalRow'.
+app/api/agents/finance/report/route.ts(235,46): error TS2304: Cannot find name 'maxRev'.
+components/ui/finance/FinancePage.tsx(206,15): error TS2339: Property 'insights' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(210,67): error TS2339: Property 'insights' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(211,53): error TS2339: Property 'insights' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(216,13): error TS2339: Property 'insights' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(231,46): error TS2339: Property 'metrics' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(232,54): error TS2339: Property 'metrics' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(232,88): error TS2339: Property 'metrics' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(233,35): error TS2339: Property 'signals' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(234,41): error TS2339: Property 'chartData' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(235,38): error TS2339: Property 'businessName' does not exist on type '{}'.
+components/ui/finance/FinancePage.tsx(236,37): error TS2339: Property 'marketplace' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(112,28): error TS2339: Property 'launch_id' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(113,41): error TS2339: Property 'publish_result' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(113,76): error TS2339: Property 'publish_result' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(137,23): error TS2339: Property 'publish_result' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(148,23): error TS2339: Property 'publish_result' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(272,34): error TS2339: Property 'optimal_prices' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(272,70): error TS2339: Property 'optimal_prices' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(273,40): error TS2339: Property 'printify_result' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(274,31): error TS2339: Property 'publish_result' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(275,37): error TS2339: Property 'publish_result' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(276,33): error TS2339: Property 'final_message' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(276,62): error TS2339: Property 'final_message' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(543,11): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+components/ui/launch/LaunchPage.tsx(547,24): error TS2339: Property 'printify_result' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(553,65): error TS2339: Property 'product_name' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(557,53): error TS2339: Property 'launch_id' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(561,53): error TS2339: Property 'timestamp' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(568,40): error TS2339: Property 'optimal_prices' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(575,40): error TS2339: Property 'printify_result' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(579,21): error TS2339: Property 'final_message' does not exist on type '{}'.
+components/ui/launch/LaunchPage.tsx(582,81): error TS2339: Property 'final_message' does not exist on type '{}'.
+lib/agents/finance/financeAgent.ts(97,62): error TS2322: Type '{}' is not assignable to type 'number'.
+lib/agents/finance/financeAgent.ts(99,43): error TS2322: Type '{ [key: string]: unknown; metrics?: unknown; signals?: unknown; }' is not assignable to type 'ToolState'.
+  Types of property 'metrics' are incompatible.
+    Type 'unknown' is not assignable to type 'Metrics | undefined'.
+lib/agents/finance/financeAgent.ts(101,36): error TS2322: Type '{ [key: string]: unknown; metrics?: unknown; signals?: unknown; }' is not assignable to type 'ToolState'.
+  Types of property 'metrics' are incompatible.
+    Type 'unknown' is not assignable to type 'Metrics | undefined'.
+lib/agents/finance/financeAgent.ts(176,39): error TS2322: Type '{ status: string; order_count: number; period_days: number; message: string; } | Metrics | { signals: Signal[]; alerts: Alert[]; error?: string | undefined; } | { error: string; tool?: undefined; recoverable?: undefined; } | { ...; }' is not assignable to type '{ signals?: unknown[] | undefined; alerts?: unknown[] | undefined; } | null'.
+  Type '{ status: string; order_count: number; period_days: number; message: string; }' has no properties in common with type '{ signals?: unknown[] | undefined; alerts?: unknown[] | undefined; }'.
+lib/agents/finance/financeAgent.ts(216,49): error TS2322: Type 'unknown[]' is not assignable to type 'Record<string, unknown>[]'.
+  Type 'unknown' is not assignable to type 'Record<string, unknown>'.
+lib/agents/launch/launchAgent.ts(103,53): error TS2322: Type 'unknown' is not assignable to type 'string'.
+lib/agents/launch/launchAgent.ts(103,84): error TS2322: Type 'unknown' is not assignable to type 'string[]'.
+lib/agents/launch/launchAgent.ts(116,13): error TS2322: Type 'unknown' is not assignable to type 'SuggestedPrices'.
+lib/agents/launch/launchAgent.ts(121,11): error TS2322: Type 'unknown' is not assignable to type 'Record<string, number> | null'.
+lib/agents/launch/launchAgent.ts(122,11): error TS2322: Type 'unknown' is not assignable to type 'string'.
+lib/agents/launch/launchAgent.ts(173,13): error TS2322: Type 'unknown' is not assignable to type 'string'.

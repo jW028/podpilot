@@ -33,8 +33,13 @@ export async function POST(request: Request) {
       .order('snapshot_date', { ascending: true })
       .limit(7);
 
+    interface SnapshotRow {
+      snapshot_date: string;
+      metrics?: { summary?: { total_revenue?: string } };
+    }
+
     // Shape: [{ month: 'Oct', revenue: 312, isCurrent: false }, ...]
-    const chartData = (historicalSnapshots ?? []).map((row: any, idx: number, arr: any[]) => {
+    const chartData = (historicalSnapshots ?? []).map((row: SnapshotRow, idx: number, arr: unknown[]) => {
       const date = new Date(row.snapshot_date);
       const month = date.toLocaleString('en-MY', { month: 'short' });
       const revenue = parseFloat(row.metrics?.summary?.total_revenue ?? '0');
@@ -55,8 +60,8 @@ export async function POST(request: Request) {
       chartData,
     }, { status: 200 });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[API] Finance Agent Error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal Server Error' }, { status: 500 });
   }
 }

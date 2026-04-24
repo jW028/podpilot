@@ -78,12 +78,6 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
     }
   };
 
-  useEffect(() => {
-    fetchChannels();
-    // Also sync from Printify on initial load so channels are always up to date
-    handleRefresh();
-  }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleRefresh = async () => {
     setRefreshing(true);
     setError(null);
@@ -109,12 +103,21 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
       }
 
       setChannels(json.channels || []);
-    } catch (err: any) {
-      setError(err.message || "Failed to refresh channels");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to refresh channels");
     } finally {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchChannels();
+      // Also sync from Printify on initial load so channels are always up to date
+      handleRefresh();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <section className="max-w-4xl mx-auto space-y-6">

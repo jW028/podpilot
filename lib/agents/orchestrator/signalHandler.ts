@@ -1,7 +1,9 @@
-export async function handleFinanceSignals({ businessId, signals, supabase }: any) {
+import { SupabaseClient } from '@supabase/supabase-js';
+
+export async function handleFinanceSignals({ businessId, signals, supabase }: { businessId: string; signals: Record<string, unknown>[]; supabase: SupabaseClient }) {
   const rows = signals
-    .filter((s: any) => s.type === 'product_signal')
-    .map((signal: any) => ({
+    .filter((s: Record<string, unknown>) => s.type === 'product_signal')
+    .map((signal: Record<string, unknown>) => ({
       business_id: businessId,
       type: 'inter_agent_signal',
       source_agent: 'finance_agent',

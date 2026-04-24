@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useFinanceAgent } from "@/hooks/useFinanceAgent";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,11 +204,14 @@ export default function FinancePage({ businessId }: { businessId: string }) {
   // Push AI insights into chat when data arrives
   useEffect(() => {
     if (data?.insights) {
-      setMessages((prev) => {
-        // Don't duplicate if same insights already in chat
-        if (prev.some((m) => m.role === "ai" && m.text === data.insights)) return prev;
-        return [...prev, { role: "ai", text: data.insights }];
-      });
+      const timer = setTimeout(() => {
+        setMessages((prev) => {
+          // Don't duplicate if same insights already in chat
+          if (prev.some((m) => m.role === "ai" && m.text === data.insights)) return prev;
+          return [...prev, { role: "ai", text: data.insights }];
+        });
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [data?.insights]);
 
@@ -226,7 +229,7 @@ export default function FinancePage({ businessId }: { businessId: string }) {
 
   // ── Derived data ────────────────────────────────────────────────────────
   const summary: Summary | undefined = data?.metrics?.summary;
-  const products: ProductRow[] = data?.metrics?.by_product ?? [];
+  const products: ProductRow[] = useMemo(() => data?.metrics?.by_product ?? [], [data?.metrics?.by_product]);
   const signals: Signal[] = data?.signals ?? [];
   const chartData: ChartPoint[] = data?.chartData ?? [];
   const businessName: string = data?.businessName ?? "your store";
@@ -282,8 +285,8 @@ export default function FinancePage({ businessId }: { businessId: string }) {
       a.download = `finance-report-${businessId}-${new Date().toISOString().split('T')[0]}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err: any) {
-      console.error('[FinancePage] Report generation error:', err.message);
+    } catch (err: unknown) {
+      console.error('[FinancePage] Report generation error:', err instanceof Error ? err.message : String(err));
       alert('Report generation failed. Please try again.');
     } finally {
       setReportLoading(false);

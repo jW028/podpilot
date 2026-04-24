@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Draggable } from "react-beautiful-dnd";
 import {
   MdTextFields,
@@ -12,6 +12,8 @@ import {
   MdEditNote,
   MdClose,
   MdCheck,
+  MdLock,
+  MdCloudUpload,
 } from "react-icons/md";
 
 export interface Block {
@@ -23,6 +25,7 @@ export interface Block {
   placeholder?: string;
   required?: boolean;
   options?: string[];
+  locked?: boolean;
 }
 
 interface EditableBlockProps {
@@ -30,9 +33,13 @@ interface EditableBlockProps {
   index: number;
   onUpdate: (block: Block) => void;
   onRemove?: (blockId: string) => void;
+  onImageUpload?: (file: File) => Promise<string | null>;
 }
 
-const getTypeIcon = (type: string) => {
+const getTypeIcon = (type: string, locked?: boolean) => {
+  if (locked) {
+    return <MdLock className="text-neutral-400 text-sm" />;
+  }
   switch (type) {
     case "text":
       return <MdTextFields className="text-primary-500 text-sm" />;
@@ -54,12 +61,18 @@ const EditableBlock = ({
   index,
   onUpdate,
   onRemove,
+  onImageUpload,
 }: EditableBlockProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [localValue, setLocalValue] = useState(block.value);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setLocalValue(block.value);
+    const timer = setTimeout(() => {
+      setLocalValue(block.value);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [block.value]);
 
   const handleUpdate = () => {
@@ -71,20 +84,42 @@ const EditableBlock = ({
     setLocalValue(value);
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onImageUpload) return;
+
+    try {
+      setIsUploading(true);
+      const url = await onImageUpload(file);
+      if (url) {
+        setLocalValue(url);
+        onUpdate({ ...block, value: url });
+      }
+    } catch (error) {
+      console.error("Image upload failed:", error);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const displayValue = localValue
     ? String(localValue).substring(0, 60)
     : null;
 
+  const isLocked = block.locked === true;
+
   return (
-    <Draggable draggableId={block.id} index={index}>
+    <Draggable draggableId={block.id} index={index} isDragDisabled={isLocked}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
           className={`bg-white border rounded-xl p-3.5 transition-all select-none ${
-            snapshot.isDragging
-              ? "border-primary-400 shadow-lg scale-[1.02] rotate-1"
-              : "border-neutral-300 shadow-sm hover:border-neutral-400 hover:shadow-md"
+            isLocked
+              ? "border-neutral-200 opacity-75"
+              : snapshot.isDragging
+                ? "border-primary-400 shadow-lg scale-[1.02] rotate-1"
+                : "border-neutral-300 shadow-sm hover:border-neutral-400 hover:shadow-md"
           }`}
           style={{
             ...provided.draggableProps.style,
@@ -95,7 +130,11 @@ const EditableBlock = ({
             {/* Drag handle */}
             <div
               {...provided.dragHandleProps}
-              className="mt-0.5 text-neutral-300 hover:text-neutral-500 cursor-grab active:cursor-grabbing transition-colors flex-shrink-0"
+              className={`mt-0.5 flex-shrink-0 transition-colors ${
+                isLocked
+                  ? "text-neutral-200 cursor-not-allowed"
+                  : "text-neutral-300 hover:text-neutral-500 cursor-grab active:cursor-grabbing"
+              }`}
             >
               <MdDragIndicator className="text-base" />
             </div>
@@ -103,7 +142,7 @@ const EditableBlock = ({
             {/* Type icon + label */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 mb-0.5">
-                {getTypeIcon(block.type)}
+                {getTypeIcon(block.type, isLocked)}
                 <p className="font-semibold text-dark text-xs leading-tight truncate">
                   {block.label}
                 </p>
@@ -112,29 +151,36 @@ const EditableBlock = ({
                     Required
                   </span>
                 )}
+                {isLocked && (
+                  <span className="text-[9px] bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+                    Fixed
+                  </span>
+                )}
               </div>
               <p className="text-[10px] text-neutral-400 truncate">{block.name}</p>
             </div>
 
-            {/* Edit / close toggle */}
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className={`p-1 rounded-md transition-colors flex-shrink-0 ${
-                isExpanded
-                  ? "bg-neutral-200 text-dark hover:bg-neutral-300"
-                  : "text-neutral-400 hover:text-dark hover:bg-neutral-100"
-              }`}
-            >
-              {isExpanded ? (
-                <MdClose className="text-sm" />
-              ) : (
-                <MdEditNote className="text-sm" />
-              )}
-            </button>
+            {/* Edit / close toggle — hidden for locked fields */}
+            {!isLocked && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className={`p-1 rounded-md transition-colors flex-shrink-0 ${
+                  isExpanded
+                    ? "bg-neutral-200 text-dark hover:bg-neutral-300"
+                    : "text-neutral-400 hover:text-dark hover:bg-neutral-100"
+                }`}
+              >
+                {isExpanded ? (
+                  <MdClose className="text-sm" />
+                ) : (
+                  <MdEditNote className="text-sm" />
+                )}
+              </button>
+            )}
           </div>
 
           {/* ── Editable Content ──────────────────────────── */}
-          {isExpanded ? (
+          {isExpanded && !isLocked ? (
             <div className="space-y-2">
               {block.type === "text" && (
                 <input
@@ -174,14 +220,48 @@ const EditableBlock = ({
               )}
 
               {block.type === "image" && (
-                <input
-                  type="text"
-                  value={typeof localValue === "string" ? localValue : ""}
-                  onChange={(e) => handleValueChange(e.target.value)}
-                  placeholder="Supabase image URL..."
-                  className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg bg-light-secondary text-dark text-xs focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent font-mono transition-all"
-                  autoFocus
-                />
+                <div className="space-y-2">
+                  {/* Image preview */}
+                  {localValue && typeof localValue === "string" && (
+                    <div className="relative rounded-lg overflow-hidden border border-neutral-200">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={localValue}
+                        alt="Product design"
+                        className="w-full h-28 object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Upload button */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 border-2 border-dashed border-neutral-300 rounded-lg text-xs text-neutral-500 hover:border-primary-400 hover:text-primary-600 transition-colors disabled:opacity-50"
+                  >
+                    <MdCloudUpload className="text-base" />
+                    {isUploading ? "Uploading..." : "Upload Image"}
+                  </button>
+
+                  {/* URL input fallback */}
+                  <input
+                    type="text"
+                    value={typeof localValue === "string" ? localValue : ""}
+                    onChange={(e) => handleValueChange(e.target.value)}
+                    placeholder="Or paste image URL..."
+                    className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg bg-light-secondary text-dark text-xs focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent font-mono transition-all"
+                  />
+                </div>
               )}
 
               {block.type === "selection" && (
@@ -212,7 +292,19 @@ const EditableBlock = ({
           ) : (
             /* ── Value Preview ──────────────────────────── */
             <div className="mt-1 pb-1 border-b border-neutral-200 min-h-[20px]">
-              {displayValue ? (
+              {block.type === "image" && localValue && typeof localValue === "string" ? (
+                <div className="rounded-lg overflow-hidden border border-neutral-200">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={localValue}
+                    alt="Product design"
+                    className="w-full h-20 object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                </div>
+              ) : displayValue ? (
                 <p className="text-xs text-dark truncate">{displayValue}</p>
               ) : (
                 <p className="text-xs text-neutral-400 italic">No value</p>

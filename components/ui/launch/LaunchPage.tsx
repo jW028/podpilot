@@ -45,28 +45,31 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
   const [selectedShopId, setSelectedShopId] = useState("");
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (!saved) return;
+    const timer = setTimeout(() => {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (!saved) return;
 
-      const parsed = JSON.parse(saved) as {
-        name?: string;
-        description?: string;
-        categoriesInput?: string;
-        tagsInput?: string;
-        userMessage?: string;
-        selectedShopId?: string;
-      };
+        const parsed = JSON.parse(saved) as {
+          name?: string;
+          description?: string;
+          categoriesInput?: string;
+          tagsInput?: string;
+          userMessage?: string;
+          selectedShopId?: string;
+        };
 
-      setName(parsed.name || "");
-      setDescription(parsed.description || "");
-      setCategoriesInput(parsed.categoriesInput || "hoodie, tshirt, mug");
-      setTagsInput(parsed.tagsInput || "");
-      setUserMessage(parsed.userMessage || "");
-      if (parsed.selectedShopId) setSelectedShopId(parsed.selectedShopId);
-    } catch {
-      // Ignore malformed local state and continue with defaults.
-    }
+        setName(parsed.name || "");
+        setDescription(parsed.description || "");
+        setCategoriesInput(parsed.categoriesInput || "hoodie, tshirt, mug");
+        setTagsInput(parsed.tagsInput || "");
+        setUserMessage(parsed.userMessage || "");
+        if (parsed.selectedShopId) setSelectedShopId(parsed.selectedShopId);
+      } catch {
+        // Ignore malformed local state and continue with defaults.
+      }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [storageKey]);
 
   // Fetch sales channels from Supabase, then sync from Printify if DB is empty

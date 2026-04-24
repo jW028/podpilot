@@ -216,17 +216,17 @@ export async function processIncomingMessages(
 
         result.processed += 1;
         if (!result.types.includes(row.type)) result.types.push(row.type);
-      } catch (rowErr: any) {
+      } catch (rowErr: unknown) {
         console.error(
           `[FinanceAgent:receive] Error handling workflow ${row.id} (${row.type}):`,
-          rowErr?.message ?? rowErr
+          rowErr instanceof Error ? rowErr.message : String(rowErr)
         );
       }
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(
       '[FinanceAgent:receive] Unexpected error in processIncomingMessages:',
-      err?.message ?? err
+      err instanceof Error ? err.message : String(err)
     );
   }
 

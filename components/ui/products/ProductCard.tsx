@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Product } from "@/lib/types";
-import Image from "next/image";
+import { MdImage } from "react-icons/md";
 
 interface ProductCardProps {
   product: Product;
@@ -32,28 +32,64 @@ const ProductCard = ({ product, businessId, onDelete }: ProductCardProps) => {
   };
 
   const [onHover, setOnHover] = useState("");
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
+
+  // Fetch product image from Supabase bucket
+  useEffect(() => {
+    const fetchImage = async () => {
+      try {
+        const response = await fetch(
+          `/api/business/${businessId}/products/${product.id}/image`,
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.url) {
+            setImageUrl(data.url);
+          }
+        }
+      } catch {
+        // No image available, that's OK
+      }
+    };
+
+    fetchImage();
+  }, [businessId, product.id]);
 
   return (
     <Link href={`/business/${businessId}/products/${product.id}`}>
       <div
-        className={`border font-sans rounded-xl transition-colors  ${onHover === product.id ? "border-primary-500 shadow" : "border-neutral-300"}`}
+        className={`border font-sans rounded-xl transition-colors ${onHover === product.id ? "border-primary-500 shadow" : "border-neutral-300"}`}
         onMouseEnter={() => setOnHover(product.id)}
         onMouseLeave={() => setOnHover("")}
       >
-        {/* TODO: convert to image */}
-        <div className="p-5 border-b border-neutral-300 rounded-t-xl h-36"></div>
+        {/* Product image */}
+        <div className="border-b border-neutral-300 rounded-t-xl h-36 overflow-hidden bg-light-secondary">
+          {imageUrl && !imageError ? (
+            <img
+              src={imageUrl}
+              alt={product.title}
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <MdImage className="text-3xl text-neutral-300" />
+            </div>
+          )}
+        </div>
 
         {/* description */}
         <div className="p-4 space-y-2 bg-light rounded-b-xl">
           <div className="space-y-0.5">
             <h1 className="text-xs font-semibold">{product.title}</h1>
-            <p className="text-[12px] text-neutral-500">
+            <p className="text-[12px] text-neutral-500 line-clamp-1">
               {product.description}
             </p>
           </div>
           <div className="flex justify-between">
             <p className="text-sm font-semibold">
-              $ {product.price.toFixed(2)}
+              $ {(product.price / 100).toFixed(2)}
             </p>
             <span
               className={`px-2 py-0.5 rounded-md text-[10px] font-light ${getStatusColor(product.status)}`}
