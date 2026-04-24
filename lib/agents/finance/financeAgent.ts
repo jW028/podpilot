@@ -51,17 +51,19 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
   // Using the PRINTIFY_DEV_TOKEN from .env file for integration.
   const printifyToken = process.env.PRINTIFY_DEV_TOKEN;
 
-  // 2. Check cache FIRST — serve cached snapshot even without Printify credentials.
-  //    This allows mock/seeded data to load during development without a live Printify token.
-  const today = new Date().toISOString().split('T')[0];
+  // 2. Check cache FIRST — serve the most recent snapshot (within last 7 days).
+  //    Using a 7-day window instead of strict today-only so mock/seeded data always loads
+  //    even when the agent hasn't run today yet (e.g. no live Printify token in dev).
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-  // FIX #5: Use .maybeSingle() instead of .single().
   const { data: cached, error: cacheError } = await supabase
     .from('finance_snapshots')
     .select('*')
     .eq('business_id', businessId)
-    .eq('snapshot_date', today)
     .eq('period', `${days}d`)
+    .gte('snapshot_date', sevenDaysAgo)
+    .order('snapshot_date', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (cacheError) {
