@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
-import { FiAlertCircle, FiCheckCircle, FiCircle, FiExternalLink, FiLoader } from "react-icons/fi";
+import {
+  FiAlertCircle,
+  FiCheckCircle,
+  FiCircle,
+  FiExternalLink,
+  FiLoader,
+} from "react-icons/fi";
 import Button from "@/components/ui/shared/Button";
 import { useLaunchAgent } from "@/hooks/useLaunchAgent";
 
@@ -28,11 +34,12 @@ type SalesChannel = {
 
 const supabaseClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
 const LaunchPage = ({ businessId }: LaunchPageProps) => {
-  const { data, loading, error, runLaunch, setData, setError } = useLaunchAgent(businessId);
+  const { data, loading, error, runLaunch, setData, setError } =
+    useLaunchAgent(businessId);
 
   const storageKey = `launch-page-state:${businessId}`;
 
@@ -45,28 +52,31 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
   const [selectedShopId, setSelectedShopId] = useState("");
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (!saved) return;
+    const timer = setTimeout(() => {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (!saved) return;
 
-      const parsed = JSON.parse(saved) as {
-        name?: string;
-        description?: string;
-        categoriesInput?: string;
-        tagsInput?: string;
-        userMessage?: string;
-        selectedShopId?: string;
-      };
+        const parsed = JSON.parse(saved) as {
+          name?: string;
+          description?: string;
+          categoriesInput?: string;
+          tagsInput?: string;
+          userMessage?: string;
+          selectedShopId?: string;
+        };
 
-      setName(parsed.name || "");
-      setDescription(parsed.description || "");
-      setCategoriesInput(parsed.categoriesInput || "hoodie, tshirt, mug");
-      setTagsInput(parsed.tagsInput || "");
-      setUserMessage(parsed.userMessage || "");
-      if (parsed.selectedShopId) setSelectedShopId(parsed.selectedShopId);
-    } catch {
-      // Ignore malformed local state and continue with defaults.
-    }
+        setName(parsed.name || "");
+        setDescription(parsed.description || "");
+        setCategoriesInput(parsed.categoriesInput || "hoodie, tshirt, mug");
+        setTagsInput(parsed.tagsInput || "");
+        setUserMessage(parsed.userMessage || "");
+        if (parsed.selectedShopId) setSelectedShopId(parsed.selectedShopId);
+      } catch {
+        // Ignore malformed local state and continue with defaults.
+      }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [storageKey]);
 
   // Fetch sales channels from Supabase, then sync from Printify if DB is empty
@@ -79,7 +89,9 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
           .select("sales_channels")
           .eq("id", businessId)
           .maybeSingle();
-        let list: SalesChannel[] = Array.isArray(row?.sales_channels) ? row.sales_channels : [];
+        let list: SalesChannel[] = Array.isArray(row?.sales_channels)
+          ? row.sales_channels
+          : [];
 
         // If no channels in DB, sync from Printify
         if (list.length === 0) {
@@ -107,7 +119,10 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
 
   useEffect(() => {
     const launchId = data?.launch_id;
-    const isPublishing = data && !data?.publish_result?.published && data?.publish_result?.publish_status === "publishing";
+    const isPublishing =
+      data &&
+      !data?.publish_result?.published &&
+      data?.publish_result?.publish_status === "publishing";
 
     if (!launchId || !isPublishing) {
       if (pollingRef.current) {
@@ -138,7 +153,10 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
             },
           });
           if (pollingRef.current) clearInterval(pollingRef.current);
-        } else if (row.status === "failed" || /fail|error|rejected/i.test(row.publish_status || "")) {
+        } else if (
+          row.status === "failed" ||
+          /fail|error|rejected/i.test(row.publish_status || "")
+        ) {
           setData({
             ...data,
             publish_result: {
@@ -168,12 +186,20 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
           tagsInput,
           userMessage,
           selectedShopId,
-        })
+        }),
       );
     } catch {
       // Ignore storage write failures.
     }
-  }, [categoriesInput, description, name, selectedShopId, storageKey, tagsInput, userMessage]);
+  }, [
+    categoriesInput,
+    description,
+    name,
+    selectedShopId,
+    storageKey,
+    tagsInput,
+    userMessage,
+  ]);
 
   const categories = useMemo(
     () =>
@@ -181,7 +207,7 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean),
-    [categoriesInput]
+    [categoriesInput],
   );
 
   const tags = useMemo(
@@ -190,10 +216,13 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean),
-    [tagsInput]
+    [tagsInput],
   );
 
-  const canSubmit = name.trim().length > 0 && description.trim().length > 0 && categories.length > 0;
+  const canSubmit =
+    name.trim().length > 0 &&
+    description.trim().length > 0 &&
+    categories.length > 0;
 
   const workflowSteps = useMemo<WorkflowStep[]>(() => {
     if (error) {
@@ -266,11 +295,16 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
       ];
     }
 
-    const hasPriceData = !!data?.optimal_prices && Object.keys(data?.optimal_prices || {}).length > 0;
+    const hasPriceData =
+      !!data?.optimal_prices &&
+      Object.keys(data?.optimal_prices || {}).length > 0;
     const hasPrintifyProduct = !!data?.printify_result?.product_id;
     const published = !!data?.publish_result?.published;
-    const publishInProgress = data?.publish_result?.publish_status === "publishing";
-    const hasSummary = !!(data?.final_message && String(data.final_message).trim().length > 0);
+    const publishInProgress =
+      data?.publish_result?.publish_status === "publishing";
+    const hasSummary = !!(
+      data?.final_message && String(data.final_message).trim().length > 0
+    );
 
     return [
       {
@@ -316,7 +350,9 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
     ];
   }, [data, error, loading]);
 
-  const completedSteps = workflowSteps.filter((step) => step.status === "done").length;
+  const completedSteps = workflowSteps.filter(
+    (step) => step.status === "done",
+  ).length;
   const progressPct = Math.round((completedSteps / workflowSteps.length) * 100);
 
   const handleLaunch = async () => {
@@ -346,13 +382,16 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
   };
 
   return (
-    <section className="max-w-6xl mx-auto space-y-6">
+    <section className="max-w-6xl mx-auto space-y-6 p-8">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-dark">Launch Agent</h1>
+          <h1 className="font-serif text-3xl font-bold text-dark">
+            Launch Agent
+          </h1>
           <p className="text-sm text-neutral-500 mt-2 max-w-2xl">
-            Launch a product to Printify from one guided form. This is single-run mode for now,
-            and will be reused later for automatic launch after design approval.
+            Launch a product to Printify from one guided form. This is
+            single-run mode for now, and will be reused later for automatic
+            launch after design approval.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -384,7 +423,9 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
           <h2 className="font-serif text-xl text-dark">Launch Input</h2>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">Product Name</span>
+            <span className="text-sm font-medium text-neutral-600">
+              Product Name
+            </span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -394,7 +435,9 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">Description</span>
+            <span className="text-sm font-medium text-neutral-600">
+              Description
+            </span>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -405,7 +448,9 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">Categories (comma-separated)</span>
+            <span className="text-sm font-medium text-neutral-600">
+              Categories (comma-separated)
+            </span>
             <input
               value={categoriesInput}
               onChange={(e) => setCategoriesInput(e.target.value)}
@@ -414,7 +459,9 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">Tags (optional, comma-separated)</span>
+            <span className="text-sm font-medium text-neutral-600">
+              Tags (optional, comma-separated)
+            </span>
             <input
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
@@ -423,7 +470,9 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">Publish to</span>
+            <span className="text-sm font-medium text-neutral-600">
+              Publish to
+            </span>
             {channels.length === 0 ? (
               <p className="text-sm text-neutral-400">
                 No sales channels connected.{" "}
@@ -450,7 +499,9 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">Launch Instruction (optional)</span>
+            <span className="text-sm font-medium text-neutral-600">
+              Launch Instruction (optional)
+            </span>
             <textarea
               value={userMessage}
               onChange={(e) => setUserMessage(e.target.value)}
@@ -478,7 +529,12 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
               )}
             </Button>
 
-            <Button variant="outline" size="md" onClick={handleReset} disabled={loading}>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={handleReset}
+              disabled={loading}
+            >
               Reset
             </Button>
           </div>
@@ -506,7 +562,10 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
                   step.status === "done" ? (
                     <FiCheckCircle className="text-primary-700" size={15} />
                   ) : step.status === "running" ? (
-                    <FiLoader className="text-primary-700 animate-spin" size={15} />
+                    <FiLoader
+                      className="text-primary-700 animate-spin"
+                      size={15}
+                    />
                   ) : step.status === "failed" ? (
                     <FiAlertCircle className="text-red-600" size={15} />
                   ) : (
@@ -520,8 +579,12 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
                   >
                     <span className="mt-0.5 shrink-0">{icon}</span>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-dark">{step.title}</p>
-                      <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{step.detail}</p>
+                      <p className="text-sm font-medium text-dark">
+                        {step.title}
+                      </p>
+                      <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+                        {step.detail}
+                      </p>
                     </div>
                   </div>
                 );
@@ -533,7 +596,8 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
 
           {!data && (
             <p className="text-sm text-neutral-500">
-              Run the launch agent to view pricing, Printify output, and the final launch summary.
+              Run the launch agent to view pricing, Printify output, and the
+              final launch summary.
             </p>
           )}
 
@@ -541,13 +605,17 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
             <div className="space-y-4">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary-100 text-primary-800 text-xs font-medium">
                 <FiCheckCircle size={14} />
-                {data?.printify_result?.success ? "Launch completed" : "Launch finished with fallback"}
+                {data?.printify_result?.success
+                  ? "Launch completed"
+                  : "Launch finished with fallback"}
               </div>
 
               <div className="space-y-2 text-sm">
                 <p>
                   <span className="text-neutral-500">Product:</span>{" "}
-                  <span className="text-dark font-medium">{data.product_name || "—"}</span>
+                  <span className="text-dark font-medium">
+                    {data.product_name || "—"}
+                  </span>
                 </p>
                 <p>
                   <span className="text-neutral-500">Launch ID:</span>{" "}
@@ -560,14 +628,18 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-dark mb-2">Suggested Prices</h3>
+                <h3 className="text-sm font-semibold text-dark mb-2">
+                  Suggested Prices
+                </h3>
                 <pre className="text-xs bg-light-secondary border border-neutral-300 rounded-lg p-3 overflow-auto text-dark">
                   {JSON.stringify(data.optimal_prices || {}, null, 2)}
                 </pre>
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-dark mb-2">Printify Result</h3>
+                <h3 className="text-sm font-semibold text-dark mb-2">
+                  Printify Result
+                </h3>
                 <pre className="text-xs bg-light-secondary border border-neutral-300 rounded-lg p-3 overflow-auto text-dark">
                   {JSON.stringify(data.printify_result || {}, null, 2)}
                 </pre>
@@ -575,8 +647,12 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
 
               {data.final_message && (
                 <div>
-                  <h3 className="text-sm font-semibold text-dark mb-2">Agent Summary</h3>
-                  <p className="text-sm text-neutral-600 leading-relaxed">{data.final_message}</p>
+                  <h3 className="text-sm font-semibold text-dark mb-2">
+                    Agent Summary
+                  </h3>
+                  <p className="text-sm text-neutral-600 leading-relaxed">
+                    {data.final_message}
+                  </p>
                 </div>
               )}
             </div>

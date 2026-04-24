@@ -46,3 +46,9 @@ body {
   color: var(--color-dark);
   font-family: var(--font-sans);
 }
+
+/* next-route-announcer,
+#next-live-resolved-error,
+[data-nextjs-static-indicator] {
+  display: none !important;
+} */

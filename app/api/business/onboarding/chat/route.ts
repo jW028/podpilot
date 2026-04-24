@@ -34,7 +34,19 @@ interface TavilySearchResponse {
   results?: TavilySearchResult[];
 }
 
-const isFrameworkShapeValid = (payload: unknown): payload is BusinessFramework => {
+interface TavilySearchResult {
+  title?: string;
+  content?: string;
+  url?: string;
+}
+
+interface TavilySearchResponse {
+  results?: TavilySearchResult[];
+}
+
+const isFrameworkShapeValid = (
+  payload: unknown,
+): payload is BusinessFramework => {
   if (!payload || typeof payload !== "object") {
     return false;
   }
@@ -158,7 +170,10 @@ const runTavilyResearch = async (apiKey: string, queries: string[]) => {
       const block = top
         .map((item, index) => {
           const title = normalizeText(item.title || "Untitled");
-          const snippet = normalizeText(item.content || "No snippet").slice(0, 320);
+          const snippet = normalizeText(item.content || "No snippet").slice(
+            0,
+            320,
+          );
           const link = item.url || "N/A";
           return `${index + 1}. Title: ${title}\nSnippet: ${snippet}\nLink: ${link}`;
         })
@@ -216,7 +231,11 @@ export async function POST(request: Request) {
       framework?: BusinessFramework | null;
     };
 
-    if (!body.messages || !Array.isArray(body.messages) || !body.messages.length) {
+    if (
+      !body.messages ||
+      !Array.isArray(body.messages) ||
+      !body.messages.length
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -227,15 +246,15 @@ export async function POST(request: Request) {
     }
 
     const apiKey = process.env.GLM_API_KEY;
-    const model = process.env.GLM_MODEL || "ilmu-glm-5.1";
-    const baseUrl = process.env.ILMU_BASE_URL || "https://api.ilmu.ai/v1";
+    const model = process.env.GLM_MODEL!;
+    const baseUrl = process.env.ILMU_BASE_URL!;
     const tavilyApiKey = process.env.TAVILY_API_KEY;
 
-    if (!apiKey) {
+    if (!apiKey || !model || !baseUrl || !tavilyApiKey) {
       return NextResponse.json(
         {
           success: false,
-          message: "Missing GLM API key.",
+          message: "Missing GLM API key and configuration.",
         },
         { status: 500 },
       );
@@ -354,19 +373,19 @@ Start your response with { and end with }. Nothing else.`;
       );
     }
 
-    const parsed = parseModelJson(content) as
-      | {
-          reply?: unknown;
-          frameworkReady?: unknown;
-          framework?: unknown;
-        }
-      | null;
+    const parsed = parseModelJson(content) as {
+      reply?: unknown;
+      frameworkReady?: unknown;
+      framework?: unknown;
+    } | null;
 
     if (!parsed || typeof parsed.reply !== "string") {
       console.warn(
         "[chat/route] JSON parse failed or reply field missing.\n",
-        "parsed:", parsed,
-        "\nraw content was:\n", content,
+        "parsed:",
+        parsed,
+        "\nraw content was:\n",
+        content,
       );
       return NextResponse.json(
         {
@@ -379,9 +398,10 @@ Start your response with { and end with }. Nothing else.`;
     }
 
     const frameworkReady = Boolean(parsed.frameworkReady);
-    const framework = frameworkReady && isFrameworkShapeValid(parsed.framework)
-      ? parsed.framework
-      : undefined;
+    const framework =
+      frameworkReady && isFrameworkShapeValid(parsed.framework)
+        ? parsed.framework
+        : undefined;
 
     const payload: ChatResponsePayload = {
       reply: parsed.reply,

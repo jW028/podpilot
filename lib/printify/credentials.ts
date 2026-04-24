@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { createClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 const ENCRYPTED_PREFIX = 'enc.v1';
 
@@ -80,7 +80,7 @@ export function maskPrintifyToken(token: string) {
   return visible ? `****${visible}` : 'connected';
 }
 
-export async function resolveBusinessPrintifyToken(supabase: ReturnType<typeof createClient>, businessId: string) {
+export async function resolveBusinessPrintifyToken(supabase: SupabaseClient, businessId: string) {
   const { data: business, error: businessError } = await supabase
     .from('businesses')
     .select('printify_pat_hint')
@@ -91,7 +91,8 @@ export async function resolveBusinessPrintifyToken(supabase: ReturnType<typeof c
     return null;
   }
 
-  const storedValue = typeof business.printify_pat_hint === 'string' ? business.printify_pat_hint : '';
+  const businessData = business as { printify_pat_hint: string | null };
+  const storedValue = typeof businessData.printify_pat_hint === 'string' ? businessData.printify_pat_hint : '';
   if (storedValue && isEncryptedTokenValue(storedValue)) {
     const decryptedToken = decryptPrintifyToken(storedValue);
     if (decryptedToken) {

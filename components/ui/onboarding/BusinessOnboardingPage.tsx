@@ -59,7 +59,7 @@ const hasProceedIntent = (message: string) => {
 const randomId = () => Math.random().toString(36).slice(2, 10);
 
 const styles = {
-  container: "max-w-4xl mx-auto",
+  container: "max-w-4xl mx-auto p-8",
   heading: "font-serif text-3xl font-bold text-light-primary mb-2",
   subtext: "text-neutral-500 text-sm mb-8",
   panel: "bg-white border border-neutral-300 rounded-xl overflow-hidden",

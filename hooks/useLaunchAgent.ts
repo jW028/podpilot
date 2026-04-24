@@ -14,14 +14,14 @@ type RunLaunchParams = {
 };
 
 type PersistedState = {
-  data?: any;
+  data?: unknown;
   error?: string | null;
   loading?: boolean;
 };
 
 export function useLaunchAgent(businessId: string | string[]) {
   const storageKey = `launch-agent-state:${businessId}`;
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(false);
@@ -32,13 +32,15 @@ export function useLaunchAgent(businessId: string | string[]) {
       const saved = localStorage.getItem(storageKey);
       if (!saved) return;
       const parsed: PersistedState = JSON.parse(saved);
-      if (parsed.data !== undefined) setData(parsed.data);
-      if (parsed.error !== undefined) setError(parsed.error);
-      // Don't restore loading=true — if the page was closed mid-launch,
-      // the in-flight request is gone. Mark it as not loading.
-      if (parsed.loading) {
-        setLoading(false);
-      }
+      setTimeout(() => {
+        if (parsed.data !== undefined) setData(parsed.data);
+        if (parsed.error !== undefined) setError(parsed.error);
+        // Don't restore loading=true — if the page was closed mid-launch,
+        // the in-flight request is gone. Mark it as not loading.
+        if (parsed.loading) {
+          setLoading(false);
+        }
+      }, 0);
     } catch {}
     mounted.current = true;
   }, [storageKey]);
@@ -86,8 +88,8 @@ export function useLaunchAgent(businessId: string | string[]) {
 
         setData(json);
         return json;
-      } catch (err: any) {
-        const message = err?.message || 'Failed to launch product';
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to launch product';
         setError(message);
         throw err;
       } finally {

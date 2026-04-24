@@ -1,13 +1,12 @@
 import React from "react";
-import DashboardHeader from "./DashboardHeader";
+import DashboardPageContent from "./DashboardPageContent";
 
-const DashboardPage = () => {
-  return (
-    <>
-      <DashboardHeader />
-      <main></main>
-    </>
-  );
+interface DashboardPageProps {
+  activeCount?: number;
+}
+
+const DashboardPage = ({ activeCount }: DashboardPageProps) => {
+  return <DashboardPageContent activeCount={activeCount} />;
 };
 
 export default DashboardPage;

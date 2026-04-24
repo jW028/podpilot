@@ -48,7 +48,9 @@ const fallbackFramework = (input: OnboardingInput): BusinessFramework => ({
   ],
 });
 
-const isFrameworkShapeValid = (payload: unknown): payload is BusinessFramework => {
+const isFrameworkShapeValid = (
+  payload: unknown,
+): payload is BusinessFramework => {
   if (!payload || typeof payload !== "object") {
     return false;
   }
@@ -125,18 +127,21 @@ Constraints:
 User context:
 ${JSON.stringify(input)}`;
 
-    const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const response = await fetch(
+      `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.4,
+          messages: [{ role: "user", content: prompt }],
+        }),
       },
-      body: JSON.stringify({
-        model,
-        temperature: 0.4,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    );
 
     if (!response.ok) {
       return NextResponse.json(
