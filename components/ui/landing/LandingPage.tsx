@@ -34,7 +34,7 @@ const LandingPage = () => {
   return (
     <main className="w-full">
       {/* Hero */}
-      <section className="flex min-h-screen items-center px-16 gap-12 bg-neutral-50">
+      <section className="flex items-center px-16 gap-12 bg-neutral-50 pt-20 pb-32">
         <div className="flex-1 max-w-xl">
           <p className="text-primary-500 uppercase tracking-widest text-xs font-medium mb-6">
             AI-Powered Print-On-Demand

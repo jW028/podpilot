@@ -184,6 +184,7 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
 
   // 6. Save snapshot to Supabase
   if (toolState.metrics) {
+    const today = new Date().toISOString().split('T')[0];
     const upsertData: any = {
       business_id: businessId,
       snapshot_date: today,
