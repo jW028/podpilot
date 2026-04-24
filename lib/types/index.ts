@@ -3,4 +3,17 @@ export type {
   SuggestedPrices,
   PricingDecision,
   PrintifyResult,
-} from './launch';
+} from "./launch";
+
+export type {
+  Product,
+  ProductLaunch,
+  CreateProductInput,
+  UpdateProductInput,
+} from "./product";
+
+export type {
+  Business,
+  CreateBusinessInput,
+  UpdateBusinessInput,
+} from "./business";

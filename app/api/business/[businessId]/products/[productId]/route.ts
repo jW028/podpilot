@@ -1,11 +1,17 @@
 import { getServerSupabase } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
+interface RouteParams {
+  businessId: string;
+  productId: string;
+}
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<RouteParams> },
 ) {
   try {
+    const { businessId, productId } = await params;
     const supabase = await getServerSupabase();
 
     // Get authenticated user
@@ -18,26 +24,36 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
-
-    // Fetch business (verify ownership)
-    const { data, error } = await supabase
+    // Verify business belongs to user
+    const { data: business, error: businessError } = await supabase
       .from("businesses")
-      .select("*")
-      .eq("id", id)
+      .select("id")
+      .eq("id", businessId)
       .eq("user_id", user.id)
       .single();
 
-    if (error) {
+    if (businessError || !business) {
       return NextResponse.json(
         { error: "Business not found" },
         { status: 404 },
       );
     }
 
+    // Get product
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .eq("id", productId)
+      .eq("business_id", businessId)
+      .single();
+
+    if (error || !data) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
     return NextResponse.json(data);
   } catch (error) {
-    console.error("Error fetching business:", error);
+    console.error("Error fetching product:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },
@@ -47,9 +63,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<RouteParams> },
 ) {
   try {
+    const { businessId, productId } = await params;
     const supabase = await getServerSupabase();
 
     // Get authenticated user
@@ -62,32 +79,43 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
-    const body = await request.json();
-
-    // Verify ownership before updating
-    const { data: existing, error: existError } = await supabase
+    // Verify business belongs to user
+    const { data: business, error: businessError } = await supabase
       .from("businesses")
       .select("id")
-      .eq("id", id)
+      .eq("id", businessId)
       .eq("user_id", user.id)
       .single();
 
-    if (existError || !existing) {
+    if (businessError || !business) {
       return NextResponse.json(
         { error: "Business not found" },
         { status: 404 },
       );
     }
 
-    // Update business
+    // Verify product belongs to business
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("id")
+      .eq("id", productId)
+      .eq("business_id", businessId)
+      .single();
+
+    if (productError || !product) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+
+    // Update product
     const { data, error } = await supabase
-      .from("businesses")
+      .from("products")
       .update({
         ...body,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", id)
+      .eq("id", productId)
       .select();
 
     if (error) {
@@ -96,7 +124,7 @@ export async function PUT(
 
     return NextResponse.json(data[0]);
   } catch (error) {
-    console.error("Error updating business:", error);
+    console.error("Error updating product:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },
@@ -106,9 +134,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<RouteParams> },
 ) {
   try {
+    const { businessId, productId } = await params;
     const supabase = await getServerSupabase();
 
     // Get authenticated user
@@ -121,25 +150,38 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
-
-    // Verify ownership before deleting
-    const { data: existing, error: existError } = await supabase
+    // Verify business belongs to user
+    const { data: business, error: businessError } = await supabase
       .from("businesses")
       .select("id")
-      .eq("id", id)
+      .eq("id", businessId)
       .eq("user_id", user.id)
       .single();
 
-    if (existError || !existing) {
+    if (businessError || !business) {
       return NextResponse.json(
         { error: "Business not found" },
         { status: 404 },
       );
     }
 
-    // Delete business
-    const { error } = await supabase.from("businesses").delete().eq("id", id);
+    // Verify product belongs to business
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("id")
+      .eq("id", productId)
+      .eq("business_id", businessId)
+      .single();
+
+    if (productError || !product) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
+    // Delete product
+    const { error } = await supabase
+      .from("products")
+      .delete()
+      .eq("id", productId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -147,7 +189,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Error deleting business:", error);
+    console.error("Error deleting product:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },

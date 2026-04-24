@@ -1,13 +1,8 @@
 import React from "react";
-import DashboardHeader from "./DashboardHeader";
+import DashboardPageContent from "./DashboardPageContent";
 
 const DashboardPage = () => {
-  return (
-    <>
-      <DashboardHeader />
-      <main></main>
-    </>
-  );
+  return <DashboardPageContent />;
 };
 
 export default DashboardPage;

@@ -4,11 +4,11 @@ import React from "react";
 const BusinessOnboardingRoute = async ({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ businessId: string }>;
 }) => {
-  const { id } = await params;
+  const { businessId } = await params;
 
-  return <BusinessOnboardingPage businessId={id} />;
+  return <BusinessOnboardingPage businessId={businessId} />;
 };
 
 export default BusinessOnboardingRoute;

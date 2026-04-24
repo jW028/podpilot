@@ -3,11 +3,17 @@ import Logo from "../ui/shared/Logo";
 import ProfileDropdown from "../ui/shared/ProfileDropdown";
 import Button from "../ui/shared/Button";
 
-const numberOfBusinesses = 0;
+interface DashboardHeaderProps {
+  businessCount?: number;
+  onCreateClick?: () => void;
+}
 
-const DashboardHeader = () => {
+const DashboardHeader = ({
+  businessCount = 0,
+  onCreateClick,
+}: DashboardHeaderProps) => {
   return (
-    <div className="flex justify-between items-center px-6 py-4 border border-neutral-300">
+    <div className="flex justify-between items-center px-6 py-4 border border-neutral-300 bg-white">
       <div className="flex justify-center items-center gap-4">
         <div>
           <Logo />
@@ -18,13 +24,13 @@ const DashboardHeader = () => {
         <div>
           <h1 className="font-serif font-bold">Your Businesses</h1>
           <p className="font-sans text-xs text-neutral-500">
-            {numberOfBusinesses} active stores
+            {businessCount} active store{businessCount !== 1 ? "s" : ""}
           </p>
         </div>
       </div>
       <div className="flex items-center gap-2">
         <ProfileDropdown />
-        <Button variant="primary" size="sm">
+        <Button variant="primary" size="sm" onClick={onCreateClick}>
           + New Business
         </Button>
       </div>
