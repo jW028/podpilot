@@ -90,9 +90,27 @@ export interface TicketSummary {
   conversationSummary: string;
 }
 
+export interface TicketMessage {
+  role: "customer" | "agent" | "manager";
+  content: string;
+  actionType?: string;
+  actionSummary?: string;
+  context?: {
+    orderId?: string;
+    orderStatus?: string;
+    orderTotal?: number;
+    productTitle?: string;
+    shopId?: string;
+    productId?: string;
+    classification?: string;
+  };
+  timestamp: string;
+}
+
 export interface CustomerServiceTicket {
   id: string;
   dbId?: string;
+  printifyOrderRef?: string | null;
   customerMessage: string;
   tier: CustomerServiceTier;
   confidence: number;
@@ -103,6 +121,7 @@ export interface CustomerServiceTicket {
   actionType: CustomerServiceActionType;
   actionSummary: string | null;
   ticketSummary: TicketSummary | null;
+  messages: TicketMessage[];
   createdAt: string;
   resolvedAt: string | null;
 }

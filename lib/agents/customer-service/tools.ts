@@ -212,7 +212,39 @@ function mapPrintifyOrder(o: PrintifyOrderFull): Omit<OrderData, "dbId"> {
   };
 }
 
-// ── Lookup from Printify API ─────────────────────────────────────────────────
+// ── Try to find order in a specific Printify shop ───────────────────────────
+async function searchShopForOrder(
+  shopId: string,
+  searchTerm: string,
+  token: string,
+): Promise<PrintifyOrderFull | null> {
+  const isHex24 = /^[0-9a-f]{24}$/.test(searchTerm);
+
+  // Direct fetch by hex ID
+  if (isHex24) {
+    const res = await fetch(
+      `https://api.printify.com/v1/shops/${shopId}/orders/${searchTerm}.json`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (res.ok) return (await res.json()) as PrintifyOrderFull;
+  }
+
+  // Search by label / app_order_id
+  const res = await fetch(
+    `https://api.printify.com/v1/shops/${shopId}/orders.json?limit=10&search=${encodeURIComponent(searchTerm)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) return null;
+
+  const json = (await res.json()) as { data?: PrintifyOrderFull[] };
+  return (json.data ?? []).find((o) => {
+    const appId = (o.app_order_id ?? "").replace(/^#/, "").toLowerCase();
+    const label = (o.label ?? "").replace(/^#/, "").replace(/^ORD-/i, "").toLowerCase();
+    return appId === searchTerm || label === searchTerm || o.id.toLowerCase() === searchTerm;
+  }) ?? null;
+}
+
+// ── Lookup from Printify API — tries all shops ───────────────────────────────
 async function lookupOrderFromPrintify(
   rawOrderId: string,
   businessId: string,
@@ -220,116 +252,51 @@ async function lookupOrderFromPrintify(
   const creds = await resolvePrintifyCreds(businessId);
   if (!creds) return null;
 
-  let { shopId, token } = creds;
+  const { token } = creds;
   const normalised = normaliseOrderId(rawOrderId);
-
-  // If the ID is an app_order_id, the shopId is encoded in it — use that directly
-  if (isAppOrderId(normalised)) {
-    const embeddedShopId = extractShopIdFromAppOrderId(normalised);
-    if (embeddedShopId !== shopId) shopId = embeddedShopId;
-  }
-
-  let match: PrintifyOrderFull | null = null;
-
-  // Strip ORD- prefix and lowercase to get the raw search term
   const searchTerm = normalised.replace(/^ORD-/i, "").replace(/^#/, "").toLowerCase();
 
-  // 1. Direct fetch by Printify hex ID (ORD-[hex24] or plain hex24)
-  if (/^[0-9a-f]{24}$/.test(searchTerm)) {
-    const res = await fetch(
-      `https://api.printify.com/v1/shops/${shopId}/orders/${searchTerm}.json`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (res.ok) match = (await res.json()) as PrintifyOrderFull;
+  // Build candidate shop IDs to try — app_order_id encodes shopId directly
+  const candidateShops: string[] = [];
+  if (isAppOrderId(normalised)) {
+    candidateShops.push(extractShopIdFromAppOrderId(normalised));
+  }
+  if (creds.shopId) candidateShops.push(creds.shopId);
+  if (process.env.PRINTIFY_SHOP_ID) candidateShops.push(process.env.PRINTIFY_SHOP_ID);
+
+  // Deduplicate
+  const tried = new Set<string>();
+
+  // 1. Try known shops first
+  for (const shopId of candidateShops) {
+    if (tried.has(shopId)) continue;
+    tried.add(shopId);
+    const match = await searchShopForOrder(shopId, searchTerm, token);
+    if (match) return { ...mapPrintifyOrder(match), dbId: match.id };
   }
 
-  // 2. Search by app_order_id / label / number
-  if (!match) {
-    const res = await fetch(
-      `https://api.printify.com/v1/shops/${shopId}/orders.json?limit=10&search=${encodeURIComponent(searchTerm)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (res.ok) {
-      const json = (await res.json()) as { data?: PrintifyOrderFull[] };
-      match = (json.data ?? []).find((o) => {
-        const appId = (o.app_order_id ?? "").replace(/^#/, "").toLowerCase();
-        const label = (o.label ?? "").replace(/^#/, "").replace(/^ORD-/i, "").toLowerCase();
-        return (
-          appId === searchTerm ||
-          label === searchTerm ||
-          o.id.toLowerCase() === searchTerm
-        );
-      }) ?? null;
+  // 2. Fall back: list all shops the token has access to and try each
+  const shopsRes = await fetch("https://api.printify.com/v1/shops.json", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (shopsRes.ok) {
+    const shops = (await shopsRes.json()) as Array<{ id: number }>;
+    for (const shop of shops) {
+      const shopId = String(shop.id);
+      if (tried.has(shopId)) continue;
+      tried.add(shopId);
+      const match = await searchShopForOrder(shopId, searchTerm, token);
+      if (match) return { ...mapPrintifyOrder(match), dbId: match.id };
     }
   }
 
-  if (!match) return null;
-
-  const mapped = mapPrintifyOrder(match);
-
-  // Sync to local orders table for instant future lookups
-  await supabase.from("orders").upsert(
-    {
-      business_id: businessId,
-      order_number: mapped.orderId,           // "#27277753.1"
-      external_order_id: match.id,
-      status: mapped.status,
-      total_amount: mapped.total,
-      currency: "MYR",
-      channel: "printify",
-      tracking_number: mapped.trackingNumber,
-      line_items: match.line_items ?? [],
-      subtotal: mapped.total,
-    },
-    { onConflict: "order_number,business_id", ignoreDuplicates: false },
-  );
-
-  return { ...mapped, dbId: match.id };
+  return null;
 }
 
-// ── Main public lookup: local DB first, then Printify ───────────────────────
+// ── Main public lookup: Printify API (orders table removed) ─────────────────
 export async function lookupOrderById(rawOrderId: string, businessId: string): Promise<OrderData> {
-  const normalised = normaliseOrderId(rawOrderId);
-
-  // 1. Local Supabase — try order_number and external_order_id
-  let { data: row, error } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("business_id", businessId)
-    .eq("order_number", normalised)
-    .maybeSingle();
-
-  if (!row) {
-    const fb = await supabase
-      .from("orders")
-      .select("*")
-      .eq("business_id", businessId)
-      .eq("external_order_id", rawOrderId)
-      .maybeSingle();
-    row = fb.data;
-    error = fb.error;
-  }
-
-  if (!error && row) {
-    const lineItems = Array.isArray(row.line_items) ? row.line_items : [];
-    const first = lineItems[0] as { title?: string; product_id?: string } | undefined;
-    return {
-      orderId: row.order_number || normalised,
-      dbId: row.id,
-      shopId: null,
-      productId: first?.product_id ?? null,
-      status: row.status,
-      total: Number(row.total_amount) || 0,
-      itemCount: lineItems.length || 1,
-      productTitle: first?.title ?? "N/A",
-      trackingNumber: row.tracking_number ?? null,
-    };
-  }
-
-  // 2. Printify API fallback
-  const printifyOrder = await lookupOrderFromPrintify(rawOrderId, businessId);
-  if (printifyOrder) return printifyOrder;
-
+  const order = await lookupOrderFromPrintify(rawOrderId, businessId);
+  if (order) return order;
   throw new Error(`Order not found: ${rawOrderId}`);
 }
 

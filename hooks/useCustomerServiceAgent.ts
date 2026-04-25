@@ -192,6 +192,7 @@ export function useCustomerServiceAgent(businessId: string) {
       const newTicket: CustomerServiceTicket = {
         id: json.ticketId || `${Date.now()}`,
         dbId: json.ticketId,
+        printifyOrderRef: pending.orderId ?? null,
         customerMessage: pending.customerIssue,
         tier: pending.tier,
         confidence: 1,
@@ -202,6 +203,10 @@ export function useCustomerServiceAgent(businessId: string) {
         actionType: pending.actionType,
         actionSummary: pending.actionSummary,
         ticketSummary: null,
+        messages: [
+          { role: "customer", content: pending.customerIssue, timestamp: new Date().toISOString() },
+          { role: "agent", content: pending.agentReply, actionType: pending.actionType, actionSummary: pending.actionSummary ?? undefined, timestamp: new Date().toISOString() },
+        ],
         createdAt: new Date().toISOString(),
         resolvedAt: null,
       };
