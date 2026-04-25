@@ -1,3 +1,12 @@
+## Video Pitch
+https://drive.google.com/drive/folders/1lLU9a19M1IcCMt77NNzhTNg_4g1qa89R?usp=sharing
+
+## Documentation
+
+- [Product Requirements Document (PRD)](./PRD.pdf)
+- [Software Architecture Document (SAD)](./SAD.pdf)
+- [Technical Architecture Document (TAD)](./TAD.pdf)
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
