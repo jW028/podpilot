@@ -6,7 +6,7 @@ import {
   detectAnomalies,
   TOOL_DEFINITIONS,
 } from './tools';
-import type { Metrics, ToolState, DetectAnomaliesResult, ProductSignal, Alert} from '@/lib/types';
+import type { Metrics, ToolState, DetectAnomaliesResult} from '@/lib/types';
 import { handleFinanceSignals } from '@/lib/agents/orchestrator/signalHandler';
 import { processIncomingMessages } from '@/lib/agents/finance/receiveHandler';
 

@@ -29,3 +29,8 @@ export type {
   Alert,
   DetectAnomaliesResult,
 } from "./types/index";
+
+export type {
+  WorkflowRow,
+  WorkflowState
+} from "./types/index";
