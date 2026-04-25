@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import type { LaunchProductInput, SuggestedPrices, DesignToLaunchPayload } from '@/lib/types';
 import { resolveBusinessPrintifyToken } from '@/lib/printify/credentials';
+import { setAgentState } from '@/lib/agents/shared/agentStateManager';
 import {
   performMarketResearch,
   createPrintifyProduct,
@@ -50,180 +51,201 @@ export async function runLaunchAgent({
   designPayload?: DesignToLaunchPayload;
   userMessage?: string | null;
 }) {
-  const glm = getGlmClient();
+  let finalState: 'idle' | 'error' = 'idle';
+  let finalTask: string | null = null;
+  let finalMetadata: Record<string, unknown> = {};
 
-  // 1. Load business context (get printify_shop_id + sales_channels) + product attributes
-  const [{ data: business, error }, { data: product }] = await Promise.all([
-    supabase
-      .from('businesses')
-      .select('id, name, printify_shop_id, sales_channels')
-      .eq('id', businessId)
-      .single(),
-    supabase
-      .from('products')
-      .select('attributes, price')
-      .eq('id', productId)
-      .maybeSingle(),
-  ]);
-
-  if (error || !business) {
-    throw new Error('Business not found');
-  }
-
-  // Merge product attributes into designPayload so blueprint/provider/variants/prices are always correct
-  const attrs = product?.attributes as Record<string, { value: unknown }> | null ?? {};
-  const attrBlueprintId = typeof attrs['blueprint_id']?.value === 'number' ? attrs['blueprint_id'].value as number : undefined;
-  const attrProviderId = typeof attrs['print_provider_id']?.value === 'number' ? attrs['print_provider_id'].value as number : undefined;
-  const attrVariantIds: number[] | undefined = (() => {
-    const v = attrs['variant_ids']?.value;
-    if (typeof v === 'string' && v) {
-      const parsed = v.split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
-      return parsed.length > 0 ? parsed : undefined;
-    }
-    if (Array.isArray(v)) return v as number[];
-    return undefined;
-  })();
-
-  // Extract price_* fields from attributes (e.g. price_hoodie, price_tshirt)
-  const attrPrices: Record<string, number> = {};
-  for (const [key, attr] of Object.entries(attrs)) {
-    if (key.startsWith('price_') && typeof attr?.value === 'number' && attr.value > 0) {
-      attrPrices[key.replace('price_', '')] = attr.value;
-    }
-  }
-
-  // Fall back to product.price (float4 column) when no price_* attributes exist
-  const productPrice: number = (product as { price?: number } | null)?.price ?? 0;
-  if (Object.keys(attrPrices).length === 0 && productPrice > 0) {
-    const productType = typeof attrs['product_type']?.value === 'string'
-      ? attrs['product_type'].value.toLowerCase()
-      : 'item';
-    attrPrices[productType.replace(/[^a-z0-9]+/g, '_').slice(0, 30)] = productPrice;
-    console.log(`[Launch Agent] Using product.price (${productPrice}) as fallback price under key "${Object.keys(attrPrices)[0]}"`);
-  }
-
-  const attrPricingReasoning = typeof attrs['pricing_reasoning']?.value === 'string'
-    ? attrs['pricing_reasoning'].value
-    : undefined;
-
-  const mergedPrices = { ...attrPrices, ...(designPayload?.prices ?? {}) };
-
-  designPayload = {
-    productName: productData.name,
-    description: productData.description ?? '',
-    categories: productData.categories ?? [],
-    tags: designPayload?.tags,
-    ...designPayload,
-    blueprintId: designPayload?.blueprintId ?? attrBlueprintId ?? 384,
-    printProviderId: designPayload?.printProviderId ?? attrProviderId,
-    variantIds: designPayload?.variantIds ?? attrVariantIds,
-    prices: mergedPrices,
-    pricingReasoning: designPayload?.pricingReasoning ?? attrPricingReasoning,
-  };
-
-  console.log('[Launch Agent] Resolved launch config:', {
-    productId,
-    blueprintId: designPayload.blueprintId,
-    printProviderId: designPayload.printProviderId,
-    variantIds: designPayload.variantIds,
-    prices: designPayload.prices,
-    hasPrices: Object.keys(designPayload.prices).length > 0,
-    pricingReasoning: designPayload.pricingReasoning ?? '(none)',
+  await setAgentState(businessId, 'launch_agent', 'running', 'Initializing launch agent', {
+    product_id: productId,
+    product_name: productData.name,
   });
 
-  // Resolve shop ID: explicit request > selected channels > first sales channel > legacy column
-  const salesChannels: Array<{ shop_id: string; title: string; channel: string }> =
-    Array.isArray(business.sales_channels) ? business.sales_channels : [];
-  const eligibleChannels = salesChannelIds && salesChannelIds.length > 0
-    ? salesChannels.filter((ch) => salesChannelIds.includes(ch.shop_id))
-    : salesChannels;
-  const resolvedShopId =
-    requestedShopId ||
-    (eligibleChannels.length > 0 ? eligibleChannels[0].shop_id : business.printify_shop_id);
-
-  // Find the channel name for the resolved shop (used in signals)
-  const resolvedChannel = salesChannels.find((ch) => ch.shop_id === resolvedShopId);
-
-  const printifyToken = await resolveBusinessPrintifyToken(supabase, businessId);
-
-  if (!printifyToken || !resolvedShopId) {
-    console.warn('[Launch Agent] Printify credentials missing, mock creation will be used.');
-  }
-
-  // Resolve product design image from Supabase storage (download bytes to avoid public URL dependency)
-  let designImageBase64: string | undefined;
-  let designImageFileName: string | undefined;
   try {
-    const { data: files } = await supabase.storage
-      .from('products')
-      .list('', { search: productId });
-    const match = files?.find((f) => f.name.startsWith(productId));
-    if (match) {
-      const { data: blob, error: dlErr } = await supabase.storage
+    const glm = getGlmClient();
+
+    await setAgentState(businessId, 'launch_agent', 'running', 'Loading business and product context');
+    // 1. Load business context (get printify_shop_id + sales_channels) + product attributes
+    const [{ data: business, error }, { data: product }] = await Promise.all([
+      supabase
+        .from('businesses')
+        .select('id, name, printify_shop_id, sales_channels')
+        .eq('id', businessId)
+        .single(),
+      supabase
         .from('products')
-        .download(match.name);
-      if (!dlErr && blob) {
-        designImageBase64 = Buffer.from(await blob.arrayBuffer()).toString('base64');
-        designImageFileName = match.name;
-        console.log(`[Launch Agent] Design image loaded: ${match.name}`);
-      } else {
-        console.warn('[Launch Agent] Failed to download design image:', dlErr?.message);
-      }
-    } else {
-      console.log('[Launch Agent] No design image in storage — will use placeholder.');
+        .select('attributes, price')
+        .eq('id', productId)
+        .maybeSingle(),
+    ]);
+
+    if (error || !business) {
+      throw new Error('Business not found');
     }
-  } catch (imgErr) {
-    console.warn('[Launch Agent] Failed to resolve design image:', imgErr);
-  }
 
-  console.log('[Launch Agent] Image resolved:', { file: designImageFileName ?? 'none (placeholder)' });
+    await setAgentState(businessId, 'launch_agent', 'running', `Launching: ${productData.name}`, { product_id: productId });
 
-  // 2. Signal command center: launch agent is now running
-  const { data: activityRow } = await supabase
-    .from('workflows')
-    .insert({
-      business_id: businessId,
-      type: 'agent_active',
-      source_agent: 'launch_agent',
-      target_agent: 'launch_agent',
-      state: 'processing',
-      payload: { product_id: productId, product_name: productData.name },
-    })
-    .select('id')
-    .single();
-  const activityId = activityRow?.id ?? null;
+    // Merge product attributes into designPayload so blueprint/provider/variants/prices are always correct
+    const attrs = product?.attributes as Record<string, { value: unknown }> | null ?? {};
+    const attrBlueprintId = typeof attrs['blueprint_id']?.value === 'number' ? attrs['blueprint_id'].value as number : undefined;
+    const attrProviderId = typeof attrs['print_provider_id']?.value === 'number' ? attrs['print_provider_id'].value as number : undefined;
+    const attrVariantIds: number[] | undefined = (() => {
+      const v = attrs['variant_ids']?.value;
+      if (typeof v === 'string' && v) {
+        const parsed = v.split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
+        return parsed.length > 0 ? parsed : undefined;
+      }
+      if (Array.isArray(v)) return v as number[];
+      return undefined;
+    })();
 
-  // 3. Insert pending launch state in the database
-  const { data: launchRecord, error: launchError } = await supabase
-    .from('product_launches')
-    .insert({
-      business_id: businessId,
-      product_id: productId,
-      status: 'in_progress',
-    })
-    .select()
-    .single();
+    // Extract price_* fields from attributes (e.g. price_hoodie, price_tshirt)
+    const attrPrices: Record<string, number> = {};
+    for (const [key, attr] of Object.entries(attrs)) {
+      if (key.startsWith('price_') && typeof attr?.value === 'number' && attr.value > 0) {
+        attrPrices[key.replace('price_', '')] = attr.value;
+      }
+    }
 
-  if (launchError) {
-    throw new Error(`Failed to create product_launches record: ${launchError.message}`);
-  }
+    // Fall back to product.price (float4 column) when no price_* attributes exist
+    const productPrice: number = (product as { price?: number } | null)?.price ?? 0;
+    if (Object.keys(attrPrices).length === 0 && productPrice > 0) {
+      const productType = typeof attrs['product_type']?.value === 'string'
+        ? attrs['product_type'].value.toLowerCase()
+        : 'item';
+      attrPrices[productType.replace(/[^a-z0-9]+/g, '_').slice(0, 30)] = productPrice;
+      console.log(`[Launch Agent] Using product.price (${productPrice}) as fallback price under key "${Object.keys(attrPrices)[0]}"`);
+    }
 
-  const launchId = launchRecord.id;
+    const attrPricingReasoning = typeof attrs['pricing_reasoning']?.value === 'string'
+      ? attrs['pricing_reasoning'].value
+      : undefined;
 
-  // 3. Build the tool executor
-  const toolState: { marketResearchSummary: string; printifyResult: { product_id?: string; [key: string]: unknown } | null; publishResult: { publish_status?: string; published?: boolean; external_product_id?: string; [key: string]: unknown } | null; prices: Record<string, number> | null; reasoning: string } = {
-    marketResearchSummary: '',
-    printifyResult: null,
-    publishResult: null,
-    prices: designPayload?.prices ?? null,
-    reasoning: designPayload?.pricingReasoning ?? '',
-  };
-  
-  async function executeTool(name: string, args: Record<string, unknown>) {
+    const mergedPrices = { ...attrPrices, ...(designPayload?.prices ?? {}) };
+
+    designPayload = {
+      productName: productData.name,
+      description: productData.description ?? '',
+      categories: productData.categories ?? [],
+      tags: designPayload?.tags,
+      ...designPayload,
+      blueprintId: designPayload?.blueprintId ?? attrBlueprintId ?? 384,
+      printProviderId: designPayload?.printProviderId ?? attrProviderId,
+      variantIds: designPayload?.variantIds ?? attrVariantIds,
+      prices: mergedPrices,
+      pricingReasoning: designPayload?.pricingReasoning ?? attrPricingReasoning,
+    };
+
+    console.log('[Launch Agent] Resolved launch config:', {
+      productId,
+      blueprintId: designPayload.blueprintId,
+      printProviderId: designPayload.printProviderId,
+      variantIds: designPayload.variantIds,
+      prices: designPayload.prices,
+      hasPrices: Object.keys(designPayload.prices).length > 0,
+      pricingReasoning: designPayload.pricingReasoning ?? '(none)',
+    });
+
+    // Resolve shop ID: explicit request > selected channels > first sales channel > legacy column
+    const salesChannels: Array<{ shop_id: string; title: string; channel: string }> =
+      Array.isArray(business.sales_channels) ? business.sales_channels : [];
+    const eligibleChannels = salesChannelIds && salesChannelIds.length > 0
+      ? salesChannels.filter((ch) => salesChannelIds.includes(ch.shop_id))
+      : salesChannels;
+    const resolvedShopId =
+      requestedShopId ||
+      (eligibleChannels.length > 0 ? eligibleChannels[0].shop_id : business.printify_shop_id);
+
+    // Find the channel name for the resolved shop (used in signals)
+    const resolvedChannel = salesChannels.find((ch) => ch.shop_id === resolvedShopId);
+
+    const printifyToken = await resolveBusinessPrintifyToken(supabase, businessId);
+
+    if (!printifyToken || !resolvedShopId) {
+      console.warn('[Launch Agent] Printify credentials missing, mock creation will be used.');
+    }
+
+    await setAgentState(businessId, 'launch_agent', 'running', 'Resolving design assets');
+    // Resolve product design image from Supabase storage (download bytes to avoid public URL dependency)
+    let designImageBase64: string | undefined;
+    let designImageFileName: string | undefined;
     try {
-      switch (name) {
-        case 'performMarketResearch': {
-          const res = await performMarketResearch({ productName: args.productName as string, categories: args.categories as string[] });
+      const { data: files } = await supabase.storage
+        .from('products')
+        .list('', { search: productId });
+      const match = files?.find((f) => f.name.startsWith(productId));
+      if (match) {
+        const { data: blob, error: dlErr } = await supabase.storage
+          .from('products')
+          .download(match.name);
+        if (!dlErr && blob) {
+          designImageBase64 = Buffer.from(await blob.arrayBuffer()).toString('base64');
+          designImageFileName = match.name;
+          console.log(`[Launch Agent] Design image loaded: ${match.name}`);
+        } else {
+          console.warn('[Launch Agent] Failed to download design image:', dlErr?.message);
+        }
+      } else {
+        console.log('[Launch Agent] No design image in storage — will use placeholder.');
+      }
+    } catch (imgErr) {
+      console.warn('[Launch Agent] Failed to resolve design image:', imgErr);
+    }
+
+    console.log('[Launch Agent] Image resolved:', { file: designImageFileName ?? 'none (placeholder)' });
+
+    // 2. Signal command center: launch agent is now running
+    const { data: activityRow } = await supabase
+      .from('workflows')
+      .insert({
+        business_id: businessId,
+        type: 'agent_active',
+        source_agent: 'launch_agent',
+        target_agent: 'launch_agent',
+        state: 'processing',
+        payload: { product_id: productId, product_name: productData.name },
+      })
+      .select('id')
+      .single();
+    const activityId = activityRow?.id ?? null;
+
+    // 3. Insert pending launch state in the database
+    const { data: launchRecord, error: launchError } = await supabase
+      .from('product_launches')
+      .insert({
+        business_id: businessId,
+        product_id: productId,
+        status: 'in_progress',
+      })
+      .select()
+      .single();
+
+    if (launchError) {
+      throw new Error(`Failed to create product_launches record: ${launchError.message}`);
+    }
+
+    const launchId = launchRecord.id;
+
+    // 3. Build the tool executor
+    const toolState: { marketResearchSummary: string; printifyResult: { product_id?: string; [key: string]: unknown } | null; publishResult: { publish_status?: string; published?: boolean; external_product_id?: string; [key: string]: unknown } | null; prices: Record<string, number> | null; reasoning: string } = {
+      marketResearchSummary: '',
+      printifyResult: null,
+      publishResult: null,
+      prices: designPayload?.prices ?? null,
+      reasoning: designPayload?.pricingReasoning ?? '',
+    };
+  
+    const TOOL_LABELS: Record<string, string> = {
+      performMarketResearch: 'Researching market pricing...',
+      createPrintifyProduct: 'Creating product on Printify...',
+      publishProductToSalesChannel: 'Publishing to sales channel...',
+    };
+
+    async function executeTool(name: string, args: Record<string, unknown>) {
+      await setAgentState(businessId, 'launch_agent', 'running', TOOL_LABELS[name] ?? `Running ${name}...`);
+      try {
+        switch (name) {
+          case 'performMarketResearch': {
+            const res = await performMarketResearch({ productName: args.productName as string, categories: args.categories as string[] });
           toolState.marketResearchSummary = res;
           
           await supabase.from('product_launches').update({
@@ -231,23 +253,23 @@ export async function runLaunchAgent({
             updated_at: new Date().toISOString()
           }).eq('id', launchId);
           
-          return { marketData: res };
-        }
-        case 'createPrintifyProduct': {
-          const res = await createPrintifyProduct({
-            productData,
-            prices: args.prices as SuggestedPrices,
-            printifyToken: printifyToken!,
-            shopId: resolvedShopId!,
-            blueprintId: designPayload?.blueprintId,
-            printProviderId: designPayload?.printProviderId,
-            variantIds: designPayload?.variantIds,
-            designImageBase64,
-            designImageFileName,
-          });
-          toolState.printifyResult = res;
-          toolState.prices = args.prices as Record<string, number>;
-          toolState.reasoning = args.reasoning as string;
+            return { marketData: res };
+          }
+          case 'createPrintifyProduct': {
+            const res = await createPrintifyProduct({
+              productData,
+              prices: args.prices as SuggestedPrices,
+              printifyToken: printifyToken!,
+              shopId: resolvedShopId!,
+              blueprintId: designPayload?.blueprintId,
+              printProviderId: designPayload?.printProviderId,
+              variantIds: designPayload?.variantIds,
+              designImageBase64,
+              designImageFileName,
+            });
+            toolState.printifyResult = res;
+            toolState.prices = args.prices as Record<string, number>;
+            toolState.reasoning = args.reasoning as string;
 
           // Check for previous prices on this product to emit price_updated signal
           const { data: prevLaunch } = await supabase
@@ -294,15 +316,15 @@ export async function runLaunchAgent({
             }
           }
 
-          return res;
-        }
-        case 'publishProductToSalesChannel': {
-          const res = await publishProductToSalesChannel({
-            productId: args.productId as string,
-            printifyToken: printifyToken!,
-            shopId: resolvedShopId!,
-            waitForPublish: false,
-          });
+            return res;
+          }
+          case 'publishProductToSalesChannel': {
+            const res = await publishProductToSalesChannel({
+              productId: args.productId as string,
+              printifyToken: printifyToken!,
+              shopId: resolvedShopId!,
+              waitForPublish: false,
+            });
           toolState.publishResult = res;
           
           await supabase.from('product_launches').update({
@@ -356,22 +378,23 @@ export async function runLaunchAgent({
             });
           }
 
-          return res;
+            return res;
+          }
+          default:
+            return { error: `Unknown tool: ${name}` };
         }
-        default:
-          return { error: `Unknown tool: ${name}` };
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error(`[Launch Agent] Tool ${name} failed:`, errorMessage);
+        return { error: errorMessage, tool: name, recoverable: true };
       }
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error(`[Launch Agent] Tool ${name} failed:`, errorMessage);
-      return { error: errorMessage, tool: name, recoverable: true };
     }
-  }
 
-  // 4. Build the system prompt and tool list (skip market research when design payload provides prices)
-  const hasDesignPrices = designPayload && Object.keys(designPayload.prices).length > 0;
-  const dp = designPayload!;
-  const systemPrompt = hasDesignPrices
+    await setAgentState(businessId, 'launch_agent', 'running', 'Planning launch steps');
+    // 4. Build the system prompt and tool list (skip market research when design payload provides prices)
+    const hasDesignPrices = designPayload && Object.keys(designPayload.prices).length > 0;
+    const dp = designPayload!;
+    const systemPrompt = hasDesignPrices
     ? `You are the Launch Agent for "${business.name}", an AI-operated print-on-demand business.
 
 The product has already been designed and priced by the Design Agent. Prices provided: ${JSON.stringify(dp.prices)}.
@@ -388,74 +411,94 @@ WORKFLOW — follow these steps in order:
 3. Call publishProductToSalesChannel using the returned productId (from step 2) to push the product live.
 4. After all calls complete, give a concise summary message. You must exclusively use the tools provided.`;
 
-  const activeTools = hasDesignPrices
-    ? TOOL_DEFINITIONS.filter((t) => t.function.name !== 'performMarketResearch')
-    : TOOL_DEFINITIONS;
+    const activeTools = hasDesignPrices
+      ? TOOL_DEFINITIONS.filter((t) => t.function.name !== 'performMarketResearch')
+      : TOOL_DEFINITIONS;
 
-  // 5. Run the agentic tools loop
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    { role: 'system', content: systemPrompt },
-    {
-      role: 'user',
-      content: userMessage || `Launch the product "${productData.name}" belonging to categories: ${productData.categories.join(', ')}. Description: ${productData.description}`,
-    },
-  ];
+    await setAgentState(businessId, 'launch_agent', 'running', 'Executing launch workflow');
+    // 5. Run the agentic tools loop
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: userMessage || `Launch the product "${productData.name}" belonging to categories: ${productData.categories.join(', ')}. Description: ${productData.description}`,
+      },
+    ];
 
-  let finalInsights = '';
-  const MAX_ITERATIONS = 6;
+    let finalInsights = '';
+    const MAX_ITERATIONS = 6;
 
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const response = await glm.chat.completions.create({
-      model: (process.env.GLM_MODEL || 'ilmu-glm-5.1').trim(),
-      messages,
-      tools: activeTools as OpenAI.Chat.ChatCompletionTool[],
-      tool_choice: 'auto',
-      max_tokens: 2048,
-      temperature: 0.4,
-    });
-
-    const msg = response.choices[0].message;
-    messages.push(msg);
-
-    if (!msg.tool_calls || msg.tool_calls.length === 0) {
-      finalInsights = msg.content || '';
-      break;
-    }
-
-    for (const toolCall of msg.tool_calls) {
-      if (toolCall.type !== 'function') continue;
-      const name = toolCall.function.name;
-      const args = JSON.parse(toolCall.function.arguments || '{}');
-
-      console.log(`[Launch Agent] Calling tool: ${name}`);
-      const result = await executeTool(name, args);
-
-      messages.push({
-        role: 'tool',
-        content: JSON.stringify(result),
-        tool_call_id: toolCall.id,
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      const response = await glm.chat.completions.create({
+        model: (process.env.GLM_MODEL || 'ilmu-glm-5.1').trim(),
+        messages,
+        tools: activeTools as OpenAI.Chat.ChatCompletionTool[],
+        tool_choice: 'auto',
+        max_tokens: 2048,
+        temperature: 0.4,
       });
+
+      const msg = response.choices[0].message;
+      messages.push(msg);
+
+      if (!msg.tool_calls || msg.tool_calls.length === 0) {
+        finalInsights = msg.content || '';
+        break;
+      }
+
+      for (const toolCall of msg.tool_calls) {
+        if (toolCall.type !== 'function') continue;
+        const name = toolCall.function.name;
+        const args = JSON.parse(toolCall.function.arguments || '{}');
+
+        console.log(`[Launch Agent] Calling tool: ${name}`);
+        const result = await executeTool(name, args);
+
+        messages.push({
+          role: 'tool',
+          content: JSON.stringify(result),
+          tool_call_id: toolCall.id,
+        });
+      }
     }
-  }
 
-  // Mark launch agent as done in command center
-  if (activityId) {
-    await supabase.from('workflows').update({
-      state: 'processed',
-      processed_at: new Date().toISOString(),
-    }).eq('id', activityId);
-  }
+    // Mark launch agent as done in command center
+    if (activityId) {
+      await supabase.from('workflows').update({
+        state: 'processed',
+        processed_at: new Date().toISOString(),
+      }).eq('id', activityId);
+    }
 
-  return {
-    launch_id: launchId,
-    product_name: productData.name,
-    optimal_prices: toolState.prices || {},
-    pricing_reasoning: toolState.reasoning,
-    printify_result: toolState.printifyResult,
-    publish_result: toolState.publishResult,
-    timestamp: new Date().toISOString(),
-    final_message: finalInsights,
-  };
+    finalState = 'idle';
+    finalTask = null;
+    finalMetadata = {
+      last_launch_product_id: productId,
+      has_publish_result: Boolean(toolState.publishResult),
+    };
+
+    return {
+      launch_id: launchId,
+      product_name: productData.name,
+      optimal_prices: toolState.prices || {},
+      pricing_reasoning: toolState.reasoning,
+      printify_result: toolState.printifyResult,
+      publish_result: toolState.publishResult,
+      timestamp: new Date().toISOString(),
+      final_message: finalInsights,
+    };
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    finalState = 'error';
+    finalTask = errorMessage;
+    finalMetadata = {
+      product_id: productId,
+      failed_at: new Date().toISOString(),
+    };
+    throw err;
+  } finally {
+    await setAgentState(businessId, 'launch_agent', finalState, finalTask, finalMetadata);
+  }
 }
 
 // Background poll: updates product_launches row when Printify publish completes

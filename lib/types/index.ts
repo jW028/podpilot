@@ -34,6 +34,8 @@ export type {
   HandlerResult,
 } from "./workflow";
 
+export type { AgentStatus, AgentState } from "./agent";
+
 export type {
   PrintifyLineItem,
   PrintifyOrder,
