@@ -21,6 +21,15 @@ function getGlmClient(): OpenAI {
   });
 }
 
+function getGeminiClient(): OpenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
+  return new OpenAI({
+    apiKey,
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -139,11 +148,8 @@ export async function POST(request: Request) {
           .join("\n")
       : "  No active signals.";
 
-    // ── Single GLM call for all 3 narrative sections ──────────────────────────
-    // Single call avoids rate-limit issues from parallel requests.
-    const glm = getGlmClient();
-
-    // Build smart code-based fallbacks from real data (used if GLM fails/times out)
+    // ── Build narrative via Gemini -> GLM -> Code Fallbacks ─────────
+    // Build smart code-based fallbacks from real data (used if AI fails/times out)
     const topProduct = [...byProduct].sort(
       (a: ProductMetric, b: ProductMetric) =>
         parseFloat(b.margin_pct) - parseFloat(a.margin_pct),
@@ -183,33 +189,55 @@ export async function POST(request: Request) {
       `3. Run a small paid promotion (RM 20–50) on ${topProduct?.title ?? "top products"} to validate demand before scaling ad spend.`,
       `4. Set a monthly snapshot review cadence to track margin trends and act on Finance Agent signals promptly.`,
     ].join("\n");
-
     let execSummary = insights || "";
     let keyObs = fallbackObs;
     let recommendations = fallbackRec;
 
-    try {
-      const glmRes = await glm.chat.completions.create({
-        model: process.env.GLM_MODEL || "ilmu-glm-5.1",
-        messages: [
-          {
-            role: "system",
-            content: `You are a financial analyst writing a report for a print-on-demand business. Write exactly 3 sections, each separated by the exact string "|||".
+    const promptMessages = [
+      {
+        role: "system" as const,
+        content: `You are a financial analyst writing a report for a print-on-demand business. Write exactly 3 sections, each separated by the exact string "|||".
 Section 1 (2-3 sentences): Overall business health and key highlights.
 Section 2 (2-3 sentences): Most important product-level findings — which perform well, which underperform, and why.
 Section 3 (4 numbered items): Strategic action recommendations, one per line, format "1. action".
 Output ONLY the 3 sections separated by "|||". No titles, no intro text, no markdown.`,
-          },
-          {
-            role: "user",
-            content: `Business: ${businessName} | Revenue: RM ${revenue} | Costs: RM ${costs} | Profit: RM ${profit} | Margin: ${margin}% | Orders: ${orders}\nProducts: ${productRows}\nSignals: ${signalRows}`,
-          },
-        ],
-        temperature: 0.4,
-        max_tokens: 500,
-      });
+      },
+      {
+        role: "user" as const,
+        content: `Business: ${businessName} | Revenue: RM ${revenue} | Costs: RM ${costs} | Profit: RM ${profit} | Margin: ${margin}% | Orders: ${orders}\nProducts: ${productRows}\nSignals: ${signalRows}`,
+      },
+    ];
 
-      const raw = glmRes.choices[0]?.message?.content?.trim() ?? "";
+    let raw = "";
+
+    try {
+      const gemini = getGeminiClient();
+      const geminiRes = await gemini.chat.completions.create({
+        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        messages: promptMessages,
+        temperature: 0.4,
+      });
+      raw = geminiRes.choices[0]?.message?.content?.trim() ?? "";
+    } catch (geminiErr: unknown) {
+      console.warn("[Report] Gemini call failed, attempting GLM fallback...");
+      try {
+        const glm = getGlmClient();
+        const glmRes = await glm.chat.completions.create({
+          model: process.env.GLM_MODEL || "ilmu-glm-5.1",
+          messages: promptMessages,
+          temperature: 0.4,
+        });
+        raw = glmRes.choices[0]?.message?.content?.trim() ?? "";
+        console.log("[Report] Successfully recovered using GLM fallback.");
+      } catch (glmErr: unknown) {
+        console.warn(
+          "[Report] GLM fallback also failed, using code-based fallbacks:",
+          glmErr instanceof Error ? glmErr.message : String(glmErr),
+        );
+      }
+    }
+
+    if (raw) {
       const parts = raw
         .split("|||")
         .map((s: string) => s.trim())
@@ -218,11 +246,6 @@ Output ONLY the 3 sections separated by "|||". No titles, no intro text, no mark
       if (parts[0] && parts[0].length > 20) execSummary = parts[0];
       if (parts[1] && parts[1].length > 20) keyObs = parts[1];
       if (parts[2] && parts[2].length > 20) recommendations = parts[2];
-    } catch (glmErr: unknown) {
-      console.warn(
-        "[Report] GLM call failed, using code-based fallbacks:",
-        glmErr instanceof Error ? glmErr.message : String(glmErr),
-      );
     }
 
     // ── Build HTML report (data tables rendered here, not by GLM) ───────

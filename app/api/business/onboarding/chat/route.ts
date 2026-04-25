@@ -246,15 +246,17 @@ export async function POST(request: Request) {
     }
 
     const apiKey = process.env.GLM_API_KEY;
-    const model = process.env.GLM_MODEL!;
-    const baseUrl = process.env.ILMU_BASE_URL!;
+    const model = process.env.GLM_MODEL || "ilmu-glm-5.1";
+    const baseUrl = process.env.ILMU_BASE_URL || "https://api.ilmu.ai/v1";
     const tavilyApiKey = process.env.TAVILY_API_KEY;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
-    if (!apiKey || !model || !baseUrl || !tavilyApiKey) {
+    if (!geminiApiKey) {
       return NextResponse.json(
         {
           success: false,
-          message: "Missing GLM API key and configuration.",
+          message: "Missing GEMINI API key.",
         },
         { status: 500 },
       );
@@ -324,41 +326,71 @@ Start your response with { and end with }. Nothing else.`;
       })),
     ];
 
-    const response = await fetch(
-      `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
+    let response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${geminiApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model,
+          model: geminiModel,
           temperature: 0.35,
-          max_tokens: 400,
+          response_format: { type: "json_object" },
           messages: messagesForModel,
         }),
       },
     );
 
-    if (!response.ok) {
+    let content: string | undefined;
+
+    if (response.ok) {
+      const completion = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      content = completion.choices?.[0]?.message?.content;
+    } else {
       console.warn(
-        `[chat/route] GLM returned non-ok status: ${response.status} ${response.statusText}`,
-      );
-      return NextResponse.json(
-        {
-          success: true,
-          data: fallbackPayload,
-          message: "Model unavailable. Returning fallback guidance.",
-        },
-        { status: 200 },
+        `[chat/route] Gemini returned non-ok status: ${response.status} ${response.statusText}`,
       );
     }
 
-    const completion = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = completion.choices?.[0]?.message?.content;
+    // ── Transparent GLM Fallback ─────────────────────────────────────────────
+    // If Gemini fails or returns empty content, we silently failover to GLM.
+    if (!response.ok || !content) {
+      console.warn("[chat/route] Gemini failed or returned empty. Attempting transparent GLM fallback...");
+      
+      if (apiKey) {
+        response = await fetch(
+          `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model,
+              temperature: 0.35,
+              messages: messagesForModel,
+            }),
+          }
+        );
+        
+        if (response.ok) {
+          const completion = (await response.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+          };
+          content = completion.choices?.[0]?.message?.content;
+          console.log("[chat/route] Successfully recovered using GLM fallback.");
+        } else {
+          console.error(`[chat/route] GLM fallback also failed: ${response.status} ${response.statusText}`);
+        }
+      } else {
+        console.warn("[chat/route] No GLM_API_KEY found, skipping fallback.");
+      }
+    }
 
     console.log("[chat/route] Raw model content:\n", content ?? "(empty)");
 
@@ -367,7 +399,7 @@ Start your response with { and end with }. Nothing else.`;
         {
           success: true,
           data: fallbackPayload,
-          message: "Model returned empty response.",
+          message: "Models unavailable or returned empty response.",
         },
         { status: 200 },
       );
