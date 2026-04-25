@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { runCustomerServiceAgent } from "@/lib/agents/customer-service/customerServiceAgent";
-import type { ConversationState } from "@/types/customerService";
+import type { ConversationState } from "@/lib/types/customerService";
 
 export async function POST(request: Request) {
   try {

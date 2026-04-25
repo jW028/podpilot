@@ -7,7 +7,7 @@ import type {
   ConversationPhase,
   PendingTicketData,
   TicketMessage,
-} from "@/types/customerService";
+} from "@/lib/types/customerService";
 
 interface CustomerServicePageProps {
   businessId: string;

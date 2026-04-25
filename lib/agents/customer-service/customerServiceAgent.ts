@@ -4,7 +4,7 @@ import type {
   CustomerServiceTier,
   ClassificationType,
   ConversationState,
-} from "@/types/customerService";
+} from "@/lib/types/customerService";
 import { buildMidTierContext, buildActionProposal, lookupOrderById } from "./tools";
 import {
   classifyMessageWithPatterns,
