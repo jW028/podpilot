@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { AgentState } from '@/lib/types/agent';
 import type { WorkflowRow, AgentName } from '@/lib/types/workflow';
 import { getAllAgentStates } from '@/lib/agents/shared/agentStateManager';
+import { performMarketResearch, inferCategories } from '@/lib/agents/launch/tools';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -121,6 +122,12 @@ export async function executeLogDecision(args: {
   return { success: true, workflowId: data.id };
 }
 
+export async function executeGetMarketResearch(query: string): Promise<{ results: string }> {
+  const categories = inferCategories(query);
+  const results = await performMarketResearch({ productName: query, categories });
+  return { results };
+}
+
 export async function executeGetReadyProducts(businessId: string): Promise<Array<{ id: string; title: string; hasPrices: boolean }>> {
   const { data, error } = await supabase
     .from('products')
@@ -169,7 +176,7 @@ export const TOOL_DEFINITIONS = [
         properties: {
           targetAgent: {
             type: 'string',
-            enum: ['finance_agent', 'launch_agent', 'design_agent', 'product_agent', 'customer_service_agent'],
+            enum: ['finance_agent', 'launch_agent', 'product_agent', 'customer_service_agent'],
             description: 'The agent to invoke.',
           },
           type: {
@@ -263,6 +270,26 @@ export const TOOL_DEFINITIONS = [
         type: 'object',
         properties: {},
         required: [],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getMarketResearch',
+      description:
+        'Search real-time market prices and trends for a product using web search (Etsy, Shopee, TikTok Shop). Returns results immediately without invoking a background agent. Use this for any market research or pricing research requests.',
+      strict: true,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Product name or niche to research (e.g. "scuba dancing shirt", "cat lover mug hoodie").',
+          },
+        },
+        required: ['query'],
         additionalProperties: false,
       },
     },

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { WorkflowRow, HandlerResult } from '@/lib/types/workflow';
 import { handleCriticalSignalEvent } from '@/lib/agents/orchestrator/eventHandler';
+import { runFinanceAgent } from '@/lib/agents/finance/financeAgent';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -60,6 +61,14 @@ export async function handleFinanceSignal(row: WorkflowRow): Promise<HandlerResu
       status: 'completed',
       data: { product_id: product_id as string, action: 'price_change_recorded' },
     };
+  }
+
+  if (row.type === 'financial_analysis') {
+    const days = typeof payload.days === 'number' ? payload.days : 30;
+    const userMessage = typeof payload.prompt === 'string' ? payload.prompt : null;
+    console.log(`[Finance] Running financial_analysis for business ${row.business_id} (${days} days)`);
+    await runFinanceAgent({ businessId: row.business_id, days, userMessage });
+    return { status: 'completed', data: { action: 'financial_analysis_run' } };
   }
 
   return { status: 'skipped', reason: `Unhandled finance signal type "${row.type}"` };

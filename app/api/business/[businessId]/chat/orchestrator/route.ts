@@ -33,7 +33,11 @@ export async function POST(
     // Run the LLM-based orchestrator — it decides which tools to call
     const { reply } = await runLlmOrchestrator({ businessId: businessUuid, message });
 
-    return NextResponse.json({ reply, businessName: business.name });
+    // Detect design intent on the user message so the client can navigate
+    const designPattern = /\b(design|create|make|draw|generate)\b.{0,40}\b(shirt|hoodie|mug|poster|hat|tshirt|t-shirt|tee|bag|product|clothing|apparel)\b|\bdesign (a|an|me|for|my)\b/i;
+    const action = designPattern.test(message) ? 'navigate_design' : undefined;
+
+    return NextResponse.json({ reply, ...(action ? { action } : {}), businessName: business.name });
   } catch (err: unknown) {
     console.error('[Chat API] Error:', err);
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';

@@ -8,6 +8,7 @@ import React, {
   useMemo,
 } from "react";
 import { useFinanceAgent } from "@/hooks/useFinanceAgent";
+import MarkdownText from "@/components/ui/shared/MarkdownText";
 import type { ProductSignal, MetricsSummary, ProductMetric, ChartPoint } from '@/lib/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -716,13 +717,13 @@ export default function FinancePage({ businessId }: { businessId: string }) {
                 {msg.role === "ai" ? "FA" : "U"}
               </div>
               <div
-                className={`px-[12px] py-[10px] text-[13px] leading-relaxed max-w-[85%] whitespace-pre-line rounded-[2px] ${
+                className={`px-[12px] py-[10px] text-[13px] leading-relaxed max-w-[85%] rounded-[2px] ${
                   msg.role === "ai"
                     ? "bg-[#FAFAF8] text-[#141412] rounded-tr-[10px] rounded-br-[10px] rounded-bl-[10px]"
                     : "bg-[#141412]/60 text-[#FAFAF8] rounded-tl-[10px] rounded-br-[10px] rounded-bl-[10px]"
                 }`}
               >
-                {msg.text}
+                {msg.role === "ai" ? <MarkdownText content={msg.text} /> : msg.text}
               </div>
             </div>
           ))}

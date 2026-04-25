@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { HiOutlineRefresh } from "react-icons/hi";
 import { IoSparkles } from "react-icons/io5";
 import { RiSendPlaneFill } from "react-icons/ri";
@@ -81,6 +82,8 @@ const DesignAgent = ({
   onConfirm,
   onLaunch,
 }: DesignAgentProps) => {
+  const searchParams = useSearchParams();
+  const autoPromptFired = useRef(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -180,12 +183,9 @@ const DesignAgent = ({
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!input.trim() || !isMounted) return;
-
-    const userMessage: ChatMessage = { role: "user", content: input };
+  const sendMessage = useCallback(async (text: string, msgSnapshot: ChatMessage[]) => {
+    const userMessage: ChatMessage = { role: "user", content: text };
     setMessages((prev) => [...prev, userMessage]);
-    setInput("");
     setIsLoading(true);
 
     try {
@@ -195,13 +195,13 @@ const DesignAgent = ({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            messages: [...messages, userMessage],
+            messages: [...msgSnapshot, userMessage],
             businessContext: { name: businessName, niche: businessNiche },
             productContext: {
               title: productTitle,
               description: productDescription,
             },
-            userIdea: input,
+            userIdea: text,
           }),
         },
       );
@@ -273,7 +273,23 @@ const DesignAgent = ({
     } finally {
       setIsLoading(false);
     }
+  }, [businessId, businessName, businessNiche, productTitle, productDescription, onFieldUpdate, selectedBlueprint]);
+
+  const handleSendMessage = async () => {
+    if (!input.trim() || !isMounted) return;
+    const text = input;
+    setInput("");
+    await sendMessage(text, messages);
   };
+
+  // Auto-send the design prompt coming from the orchestrator
+  useEffect(() => {
+    const prompt = searchParams?.get("designPrompt");
+    if (!prompt || !isMounted || autoPromptFired.current) return;
+    autoPromptFired.current = true;
+    sendMessage(prompt, messages);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMounted]);
 
   const handleConfirm = async () => {
     if (!onConfirm) return;

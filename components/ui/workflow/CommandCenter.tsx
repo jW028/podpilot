@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Brain, Box, Rocket, LineChart, Send, AlertCircle, Clock, Check, RefreshCw } from "lucide-react";
 import type { WorkflowRow } from "@/lib/types/workflow";
 import type { AgentState } from "@/lib/types/agent";
+import MarkdownText from "@/components/ui/shared/MarkdownText";
 
 interface CommandCenterProps {
   businessId: string; // Could be a UUID or a slug (e.g. 'moki')
@@ -22,15 +24,19 @@ const AGENTS = [
   { id: "finance_agent", name: "Finance Agent",  desc: "Profit analysis",           icon: LineChart, color: "text-blue-500"   },
 ];
 
+const WELCOME_MSG = "System online. Currently monitoring agent coordination for your store. How can I help you today?";
+
 export default function CommandCenter({ businessId }: CommandCenterProps) {
   const supabase = createClient();
+  const router = useRouter();
   const [realBusinessId, setRealBusinessId] = useState<string | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
   const [agentStates, setAgentStates] = useState<AgentState[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "ai", text: "System online. Currently monitoring agent coordination for your store. How can I help you today?" }
+    { role: "ai", text: WELCOME_MSG }
   ]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -74,6 +80,16 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
 
       setRealBusinessId(uuid);
       refreshData(uuid);
+
+      // Restore chat history from localStorage
+      try {
+        const saved = localStorage.getItem(`oc-chat-${uuid}`);
+        if (saved) {
+          const parsed = JSON.parse(saved) as ChatMessage[];
+          if (parsed.length > 0) setMessages(parsed);
+        }
+      } catch {}
+      setHistoryLoaded(true);
 
       const channelSuffix = `${uuid}-${Math.random().toString(36).slice(2)}`;
 
@@ -126,6 +142,14 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
+  // Persist chat history to localStorage whenever messages change
+  useEffect(() => {
+    if (!realBusinessId || !historyLoaded) return;
+    try {
+      localStorage.setItem(`oc-chat-${realBusinessId}`, JSON.stringify(messages.slice(-50)));
+    } catch {}
+  }, [messages, realBusinessId, historyLoaded]);
+
   const handleSend = async () => {
     if (!chatInput.trim() || isTyping) return;
     const userMsg = chatInput;
@@ -145,6 +169,9 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
         setMessages((prev) => [...prev, { role: "ai", text: `Error: ${data.error}` }]);
       } else if (data.reply) {
         setMessages((prev) => [...prev, { role: "ai", text: data.reply }]);
+        if (data.action === 'navigate_design') {
+          setTimeout(() => router.push(`/business/${businessId}/products?designPrompt=${encodeURIComponent(userMsg)}`), 1200);
+        }
       }
     } catch {
       setMessages((prev) => [...prev, { role: "ai", text: "Network error. Please check your connection." }]);
@@ -386,7 +413,7 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                   ? "bg-white border border-[#E8E7E2] text-[#141412] rounded-tl-sm"
                   : "bg-[#141412] text-white rounded-tr-sm"
               }`}>
-                {msg.text}
+                {msg.role === "ai" ? <MarkdownText content={msg.text} /> : msg.text}
               </div>
             </div>
           ))}
