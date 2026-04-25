@@ -1,18 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-
-type WorkflowState = 'pending' | 'processed' | 'failed';
-
-interface WorkflowRow {
-  id: string;
-  business_id: string;
-  source_agent: string;
-  target_agent: string;
-  type: string;
-  payload: Record<string, unknown>;
-  state: WorkflowState;
-  created_at: string;
-  processed_at: string | null;
-}
+import type { WorkflowState, WorkflowRow } from '@/lib/types';
 
 interface ProductLaunchedPayload {
   product_id: string;

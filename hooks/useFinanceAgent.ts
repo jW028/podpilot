@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import type { FinanceAgentResponse } from '@/lib/types';
 
 // FIX #2: Auth token comes from supabase.auth.getSession() — NEVER localStorage.
 const supabase = createClient(
@@ -8,7 +9,7 @@ const supabase = createClient(
 );
 
 export function useFinanceAgent(businessId: string | string[]) {
-  const [data, setData] = useState<unknown>(null);
+  const [data, setData] = useState<FinanceAgentResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,10 +20,8 @@ export function useFinanceAgent(businessId: string | string[]) {
     setError(null);
 
     try {
-      // FIX #2: Get token from Supabase session — never from localStorage manually
+
       const { data: { session } } = await supabase.auth.getSession();
-      // If auth is required, uncomment:
-      // if (!session) throw new Error('Not authenticated. Please log in.');
 
       const res = await fetch(`/api/agents/finance`, {
         method: 'POST',

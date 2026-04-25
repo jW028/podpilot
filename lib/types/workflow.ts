@@ -51,3 +51,4 @@ export type HandlerResult =
   | { status: 'completed'; data?: Record<string, unknown> }
   | { status: 'skipped'; reason: string }
   | { status: 'failed'; error: string };
+
