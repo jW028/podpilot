@@ -43,4 +43,6 @@ export type {
   Metrics,
   ToolState,
   DetectAnomaliesResult,
+  FinanceAgentResponse,
+  ChartPoint,
 } from './finance';

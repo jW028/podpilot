@@ -28,6 +28,8 @@ export type {
   ProductSignal, 
   Alert,
   DetectAnomaliesResult,
+  FinanceAgentResponse,
+  ChartPoint,
 } from "./types/index";
 
 export type {

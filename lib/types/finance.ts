@@ -60,3 +60,23 @@ export type DetectAnomaliesResult = {
   alerts: Alert[];
   error?: string;
 };
+
+export interface FinanceAgentResponse {
+  metrics: {
+    summary: MetricsSummary;
+    by_product: ProductMetric[];
+  } | null;
+  insights: string;
+  signals: ProductSignal[] | null;
+  chartData?: ChartPoint[];
+  businessName?: string;
+  marketplace?: string;
+  cached: boolean;
+  chatMode?: boolean;
+}
+
+export interface ChartPoint {
+  month: string;
+  revenue: number;
+  isCurrent: boolean;
+}

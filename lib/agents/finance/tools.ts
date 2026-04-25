@@ -99,11 +99,10 @@ export async function fetchPrintifyOrders({
     if (current_page >= last_page || filtered.length < pageOrders.length) break;
     page++;
 
-    // FIX #4: Rate-limit protection — 200ms between pages
     await new Promise((r) => setTimeout(r, 200));
   }
 
-  // FIX #1: Store full orders in toolState (server memory), NOT in GLM context
+
   if (toolState) toolState.orders = orders;
 
   // Return only a slim summary to GLM — never the raw array
@@ -146,10 +145,8 @@ export function calculateProfitMetrics({
   let totalCosts = 0;
 
   for (const order of orders) {
-    // order.total_price = what customer paid (cents)
-    // line_item.cost + line_item.shipping_cost = what Printify charged us
 
-    const orderRevenue = order.total_price / 100; // convert cents → dollars/MYR
+    const orderRevenue = order.total_price / 100; 
     let orderCost = 0;
 
     for (const item of order.line_items) {
@@ -181,7 +178,6 @@ export function calculateProfitMetrics({
     totalCosts += orderCost;
   }
 
-  // Finalise per-product margins
   const productList: ProductMetric[] = Object.values(byProduct)
     .map((p) => {
       p.profit = p.revenue - p.cost;
@@ -206,7 +202,6 @@ export function calculateProfitMetrics({
     by_product: productList,
   };
 
-  // FIX #1: Store metrics in toolState for detectAnomalies to read
   if (toolState) toolState.metrics = metrics;
 
   return metrics;
@@ -231,7 +226,6 @@ export function detectAnomalies({ toolState }: DetectAnomaliesParams): {
   const signals: ProductSignal[] = [];
   const alerts: Alert[] = [];
 
-  // FIX #3: Demo-friendly thresholds (environment-switchable)
   const DEMO_MODE = process.env.DEMO_MODE === "true";
   const THRESHOLDS = DEMO_MODE
     ? { reprice: 30, retire: 15, boost_margin: 35, boost_units: 1 }
@@ -280,13 +274,6 @@ export function detectAnomalies({ toolState }: DetectAnomaliesParams): {
       });
     }
 
-    // FIX #6: Removed unreachable `units_sold === 0` rule.
-    // metrics.by_product is aggregated from fulfilled orders — any product that
-    // appears in this list sold at least once. A zero-unit check here can never fire.
-    //
-    // Replaced with: flag single-unit products that are unprofitable.
-    // These are genuinely risky — one order is too thin a sample to know if they
-    // can sustain themselves, and they're already losing money.
     if (product.units_sold === 1 && product.profit <= 0) {
       alerts.push({
         type: "low_volume_loss",
