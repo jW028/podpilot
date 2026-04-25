@@ -8,38 +8,7 @@ import React, {
   useMemo,
 } from "react";
 import { useFinanceAgent } from "@/hooks/useFinanceAgent";
-import type { ProductSignal } from '@/lib/types';
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface Summary {
-  total_orders: number;
-  total_revenue: string;
-  total_costs: string;
-  total_profit: string;
-  overall_margin_pct: string;
-}
-
-interface ProductRow {
-  product_id: string;
-  title: string;
-  units_sold: number;
-  revenue: number;
-  cost: number;
-  profit: number;
-  margin_pct: string;
-}
-interface ChartPoint {
-  month: string;
-  revenue: number;
-  isCurrent: boolean;
-}
-
-interface ChatMessage {
-  role: "ai" | "user";
-  text: string;
-}
+import type { ProductSignal, MetricsSummary, ProductMetric, ChartPoint } from '@/lib/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -270,8 +239,8 @@ export default function FinancePage({ businessId }: { businessId: string }) {
   }, [chatInput, days, loading, runAnalysis]);
 
   // ── Derived data ────────────────────────────────────────────────────────
-  const summary: Summary | undefined = data?.metrics?.summary;
-  const products: ProductRow[] = useMemo(
+  const summary: MetricsSummary | undefined = data?.metrics?.summary;
+  const products: ProductMetric[] = useMemo(
     () => data?.metrics?.by_product ?? [],
     [data?.metrics?.by_product],
   );
