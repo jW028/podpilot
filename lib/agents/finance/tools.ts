@@ -1,3 +1,5 @@
+import type { ProductSignal as Signal, Alert } from '@/lib/types/workflow';
+
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
 interface PrintifyLineItem {
@@ -46,24 +48,6 @@ interface Metrics {
   summary: MetricsSummary;
   by_product: ProductMetric[];
   note?: string;
-}
-
-interface Signal {
-  type: "product_signal";
-  action: "reprice" | "retire" | "boost";
-  product_id: string;
-  product_title: string;
-  reason: string;
-  priority: "CRITICAL" | "HIGH" | "MEDIUM";
-  suggested_price_multiplier?: number;
-}
-
-interface Alert {
-  type: "low_volume_loss" | "negative_profit";
-  severity?: "CRITICAL";
-  message: string;
-  product_id?: string;
-  product_title?: string;
 }
 
 interface ToolState {

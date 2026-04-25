@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import type { LaunchProductInput } from '@/lib/types';
+import type { LaunchProductInput, DesignToLaunchPayload } from '@/lib/types';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,8 +8,11 @@ const supabase = createClient(
 );
 
 type RunLaunchParams = {
+  productId?: string;
   productData: LaunchProductInput;
   shopId?: string;
+  salesChannelIds?: string[];
+  designPayload?: DesignToLaunchPayload;
   userMessage?: string | null;
 };
 
@@ -19,8 +22,9 @@ type PersistedState = {
   loading?: boolean;
 };
 
-export function useLaunchAgent(businessId: string | string[]) {
-  const storageKey = `launch-agent-state:${businessId}`;
+export function useLaunchAgent(businessId: string | string[], productId?: string) {
+  const resolvedBusinessId = Array.isArray(businessId) ? businessId[0] : businessId;
+  const storageKey = `launch-agent-state:${resolvedBusinessId}`;
   const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,11 +39,7 @@ export function useLaunchAgent(businessId: string | string[]) {
       setTimeout(() => {
         if (parsed.data !== undefined) setData(parsed.data);
         if (parsed.error !== undefined) setError(parsed.error);
-        // Don't restore loading=true — if the page was closed mid-launch,
-        // the in-flight request is gone. Mark it as not loading.
-        if (parsed.loading) {
-          setLoading(false);
-        }
+        if (parsed.loading) setLoading(false);
       }, 0);
     } catch {}
     mounted.current = true;
@@ -55,8 +55,8 @@ export function useLaunchAgent(businessId: string | string[]) {
   }, [data, error, loading, storageKey]);
 
   const runLaunch = useCallback(
-    async ({ productData, shopId, userMessage = null }: RunLaunchParams) => {
-      if (!businessId) return;
+    async ({ productId: paramProductId, productData, shopId, salesChannelIds, designPayload, userMessage = null }: RunLaunchParams) => {
+      if (!resolvedBusinessId) return;
 
       setLoading(true);
       setError(null);
@@ -73,10 +73,12 @@ export function useLaunchAgent(businessId: string | string[]) {
             ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
           },
           body: JSON.stringify({
-            businessId: '123e4567-e89b-12d3-a456-426614174000', // temporary mock
-            productId: 'aaaaaaaa-0001-0001-0001-000000000005', // temporary mock
+            businessId: resolvedBusinessId,
+            productId: paramProductId ?? productId,
             productData,
             shopId,
+            salesChannelIds,
+            designPayload,
             userMessage,
           }),
         });
@@ -96,7 +98,7 @@ export function useLaunchAgent(businessId: string | string[]) {
         setLoading(false);
       }
     },
-    [businessId]
+    [resolvedBusinessId, productId]
   );
 
   return { data, loading, error, runLaunch, setData, setError };

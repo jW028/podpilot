@@ -1,4 +1,4 @@
-import Link from "next/link";
+import CommandCenter from "@/components/ui/workflow/CommandCenter";
 
 const BusinessWorkflow = async ({
   params,
@@ -8,43 +8,28 @@ const BusinessWorkflow = async ({
   const { businessId } = await params;
 
   return (
-    <section className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="font-serif text-3xl font-bold text-light-primary mb-2">
-          Business Workflow
-        </h1>
-        <p className="text-neutral-500 text-sm">
-          This command center receives confirmed handoff payloads from
-          onboarding and routes work to downstream agents.
-        </p>
-      </div>
-
-      <div className="bg-white border border-neutral-300 rounded-xl p-6">
-        <h2 className="font-serif text-xl text-light-primary mb-3">
-          Onboarding Handoff Status
-        </h2>
-        <p className="text-sm text-neutral-600">
-          If you just completed onboarding, your confirmed business direction
-          has been stored and handed off to the design agent queue.
-        </p>
-        <p className="text-xs text-neutral-500 mt-3">
-          Business ID: {businessId}
-        </p>
-        <div className="mt-5 flex gap-3 flex-wrap">
-          <Link
-            href={`/business/${businessId}/onboarding`}
-            className="px-4 py-2 rounded-lg border border-neutral-300 text-neutral-600 hover:bg-light transition-colors text-sm"
-          >
-            Back to Onboarding
-          </Link>
-          <Link
-            href={`/business/${businessId}/products`}
-            className="px-4 py-2 rounded-lg bg-dark text-light hover:bg-neutral-900 transition-colors text-sm"
-          >
-            Continue to Products
-          </Link>
+    <section className="space-y-6">
+      <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div>
+          <h1 className="font-serif text-3xl font-bold text-[#141412] mb-1">
+            AI Command Center
+          </h1>
+          <p className="text-neutral-500 text-sm">
+            Orchestrate agents · Monitor workflows · /business/{businessId}/workflow
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <div className="flex items-center gap-2 bg-[#F4F3EF] px-3 py-1.5 rounded-md border border-[#E8E7E2]">
+            <div className="w-1.5 h-1.5 bg-[#C9A84C] rounded-full animate-pulse" />
+            <span className="text-xs font-medium text-neutral-600">3 agents running</span>
+          </div>
+          <button className="px-4 py-1.5 border border-[#E8E7E2] rounded-md text-sm font-medium hover:bg-[#F4F3EF] transition-colors">
+            View logs
+          </button>
         </div>
       </div>
+
+      <CommandCenter businessId={businessId} />
     </section>
   );
 };
