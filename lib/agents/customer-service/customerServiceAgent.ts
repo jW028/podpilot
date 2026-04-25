@@ -1,5 +1,4 @@
 import OpenAI from "openai";
-import { createClient } from "@supabase/supabase-js";
 import type {
   CustomerServiceRunResult,
   CustomerServiceTier,
@@ -11,11 +10,9 @@ import {
   classifyMessageWithPatterns,
   extractDetailsIncremental,
   checkMissingDetails,
-  generateMissingDetailsPrompt,
   hasRequiredDetails,
   isConfirmation,
   isDenial,
-  generateTicketSummary,
 } from "./classifier";
 
 function getGlmClient(): OpenAI | null {
@@ -27,11 +24,6 @@ function getGlmClient(): OpenAI | null {
     baseURL: process.env.ILMU_BASE_URL || "https://api.ilmu.ai/v1",
   });
 }
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 
 const ISSUE_TYPE_MAP: Record<string, string> = {
   company_follow_up_refund: "refund_request",
@@ -75,6 +67,10 @@ function createInitialState(): ConversationState {
     orderId: null,
     orderStatus: null,
     orderTotal: null,
+    orderProductTitle: null,
+    shopId: null,
+    productId: null,
+    pendingTicket: null,
     turnCount: 0,
   };
 }
@@ -121,34 +117,6 @@ function friendlyClassification(classification: ClassificationType): string {
   }
 }
 
-async function logRefundWorkflow(params: {
-  businessId: string;
-  message: string;
-  issueType: string;
-  actionSummary: string | null;
-}) {
-  if (!params.actionSummary) return;
-
-  const orderIdMatch = params.actionSummary.match(/ORD-\d+/);
-  const refundAmountMatch = params.actionSummary.match(/RM\s+(\d+(\.\d+)?)/);
-
-  await supabase.from("workflows").insert({
-    business_id: params.businessId,
-    type: "refund_processed",
-    source_agent: "customer_service_agent",
-    target_agent: "finance_agent",
-    state: "completed",
-    payload: {
-      order_id: orderIdMatch?.[0] ?? "ORD-AUTO",
-      product_id: "N/A",
-      product_title: "N/A",
-      refund_amount: refundAmountMatch ? Number(refundAmountMatch[1]) : 0,
-      reason: params.issueType || "customer_request",
-      refunded_at: new Date().toISOString(),
-      note: params.message,
-    },
-  });
-}
 
 export async function runCustomerServiceAgent(input: {
   businessId: string;
@@ -168,7 +136,10 @@ export async function runCustomerServiceAgent(input: {
 
     state.classification = classification;
     state.tier = tier;
-    state.collectedDetails = patternClassification.extractedDetails;
+    state.collectedDetails = {
+      ...patternClassification.extractedDetails,
+      issueDescription: customerMessage.trim(),
+    };
 
     // Simple inquiry — no order follow-up needed
     if (classification === "none") {
@@ -255,7 +226,7 @@ export async function runCustomerServiceAgent(input: {
 
     if (isConfirmation(customerMessage)) {
       state.phase = "action_confirmed";
-      return await handleActionConfirmed(state, businessId, createdAt);
+      return await handleActionConfirmed(state, businessId);
     }
 
     // Ambiguous — clarify
@@ -311,6 +282,9 @@ async function handleLookup(
     state.orderId = order.orderId;
     state.orderStatus = order.status;
     state.orderTotal = order.total;
+    state.orderProductTitle = order.productTitle !== "N/A" ? order.productTitle : null;
+    state.shopId = order.shopId;
+    state.productId = order.productId;
 
     const proposal = buildActionProposal(
       state.classification,
@@ -326,12 +300,12 @@ async function handleLookup(
     state.proposedActionSummary = proposal.summary;
     state.phase = "proposing_action";
 
-    const trackingNote = order.trackingNumber ? ` Tracking: ${order.trackingNumber}.` : "";
+    const productNote = order.productTitle !== "N/A" ? ` (${order.productTitle})` : "";
 
     const llm = await generateReply(
-      `I found order ${order.orderId} — status: ${order.status}, total: RM ${order.total.toFixed(2)}.${trackingNote} Based on the customer's issue, I recommend: ${proposal.summary}. Ask the customer: "Would you like me to proceed with this?"`,
+      `I found order ${order.orderId}${productNote} — status: ${order.status}, total: RM ${order.total.toFixed(2)}. Based on the customer's issue, I recommend: ${proposal.summary}. Ask the customer: "Would you like me to proceed with this?"`,
     );
-    const aiReply = llm || `I found your order ${order.orderId} — it's currently ${order.status} with a total of RM ${order.total.toFixed(2)}.\n\nBased on your issue, I'd like to ${proposal.summary}. Would you like me to proceed with this?`;
+    const aiReply = llm || `I found your order ${order.orderId}${productNote} — it's currently ${order.status} with a total of RM ${order.total.toFixed(2)}.\n\nBased on your issue, I'd like to ${proposal.summary}. Would you like me to proceed with this?`;
 
     return {
       requiresCompany: false,
@@ -356,91 +330,42 @@ async function handleLookup(
 async function handleActionConfirmed(
   state: ConversationState,
   businessId: string,
-  createdAt: string,
 ): Promise<CustomerServiceRunResult> {
   const orderId = state.orderId || state.collectedDetails.orderNumber || "ORD-UNKNOWN";
 
   const toolOutput = await buildMidTierContext(state.classification, orderId, businessId);
 
-  const shouldCreateTicket = state.tier === "mid" || state.tier === "extreme";
-  const ticketStatus = state.tier === "extreme" ? "escalated" : "open";
-
   const llm = await generateReply(
-    `The action has been completed: ${toolOutput.contextForReply}. Inform the customer that everything is taken care of. Be warm and concise.`,
+    `The action has been completed: ${toolOutput.contextForReply}. Inform the customer everything is taken care of. Be warm and concise.`,
   );
-  const aiReply = llm || `All done! ${toolOutput.contextForReply}\n\nIs there anything else I can help you with?`;
+  const aiReply = llm || `All done! ${toolOutput.contextForReply}\n\nPlease review the ticket summary below and click Finalize when you're ready.`;
 
-  if (toolOutput.actionType === "process_refund") {
-    await logRefundWorkflow({
-      businessId,
-      message: "",
-      issueType: state.classification,
-      actionSummary: toolOutput.actionSummary,
-    });
-  }
+  const priority = state.tier === "extreme" ? "high" : state.tier === "mid" ? "normal" : "low";
 
-  // ── Persist support ticket to Supabase ───────────────────────────
-  let ticketDbId: string | undefined;
-  if (shouldCreateTicket) {
-    const dbStatus = ticketStatus === "escalated" ? "escalated" : "open";
-    const priority = state.tier === "extreme" ? "high" : state.tier === "mid" ? "normal" : "low";
-    const issueType = ISSUE_TYPE_MAP[state.classification] || "general";
-
-    const { data: ticketRow, error: ticketError } = await supabase
-      .from("support_tickets")
-      .insert({
-        business_id: businessId,
-        order_id: state.orderId || null,
-        channel: "manual",
-        issue_type: issueType,
-        priority,
-        status: dbStatus,
-        messages: [
-          {
-            role: "agent",
-            content: aiReply,
-            actionType: toolOutput.actionType,
-            actionSummary: toolOutput.actionSummary,
-            timestamp: createdAt,
-          },
-        ],
-      })
-      .select("id")
-      .single();
-
-    if (ticketError) {
-      console.error("[CS Agent] Failed to insert support ticket:", ticketError);
-    } else if (ticketRow) {
-      ticketDbId = ticketRow.id;
-    }
-  }
-
-  const ticketSummary = generateTicketSummary("", state.classification);
-
-  state.phase = "resolved";
+  // Store all ticket data in state — ticket is NOT saved yet, user reviews first
+  state.pendingTicket = {
+    orderId: state.orderId,
+    shopId: state.shopId,
+    productId: state.productId,
+    orderProductTitle: state.orderProductTitle,
+    orderStatus: state.orderStatus,
+    orderTotal: state.orderTotal,
+    classification: state.classification,
+    issueType: ISSUE_TYPE_MAP[state.classification] || "general",
+    priority,
+    tier: state.tier,
+    actionType: toolOutput.actionType,
+    actionSummary: toolOutput.actionSummary,
+    customerIssue: state.collectedDetails.issueDescription || state.classification.replace(/_/g, " "),
+    agentReply: aiReply,
+  };
+  state.phase = "awaiting_finalize";
 
   return {
-    requiresCompany: shouldCreateTicket,
+    requiresCompany: false,
     aiReply,
-    ticketCreated: shouldCreateTicket,
-    ticket: shouldCreateTicket
-      ? {
-          id: ticketDbId || `${Date.now()}`,
-          dbId: ticketDbId,
-          customerMessage: "",
-          tier: state.tier,
-          confidence: 1,
-          issueType: state.classification,
-          classification: state.classification,
-          status: ticketStatus,
-          aiReply,
-          actionType: toolOutput.actionType,
-          actionSummary: toolOutput.actionSummary,
-          ticketSummary,
-          createdAt,
-          resolvedAt: null,
-        }
-      : null,
+    ticketCreated: false,
+    ticket: null,
     conversationState: { ...state },
   };
 }

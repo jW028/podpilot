@@ -90,14 +90,33 @@ const CLASSIFICATION_PATTERNS: ClassificationPattern[] = [
 export function extractDetailsFromMessage(message: string): CollectedDetails {
   const result: CollectedDetails = {};
 
-  const orderMatch =
-    message.match(/(?:order\s*(?:#|number|id|no\.?|#?\s*:?))\s*:?-?\s*(\d{3,8})/i) ||
-    message.match(/(?:ord[er]*-?)(\d{3,8})/i) ||
-    message.match(/(?:my\s+order\s+(?:is|was|:\s*))(\d{3,8})/i) ||
-    message.match(/#(\d{3,8})/) ||
-    message.match(/\b(\d{4,8})\b/);
-  if (orderMatch) {
-    result.orderNumber = `ORD-${orderMatch[1]}`;
+  // Printify app_order_id format: #27277753.1 or 27277753.1 (shopId.sequence)
+  const appOrderMatch = message.match(/#?(\d{6,10}\.\d+)/);
+  if (appOrderMatch) {
+    result.orderNumber = appOrderMatch[1];
+  } else {
+    // ORD-[hex24] e.g. ORD-69ec4b722466999ddf001590 (Printify internal hex ID)
+    const ordHexMatch = message.match(/\b(ORD-[0-9a-f]{20,})\b/i);
+    if (ordHexMatch) {
+      result.orderNumber = ordHexMatch[1].toUpperCase();
+    } else {
+      // Plain Printify hex ID without prefix (24 lowercase hex chars)
+      const hexMatch = message.match(/\b([0-9a-f]{24})\b/i);
+      if (hexMatch) {
+        result.orderNumber = `ORD-${hexMatch[1].toLowerCase()}`;
+      } else {
+        // ORD-#### or plain numeric
+        const orderMatch =
+          message.match(/(?:order\s*(?:#|number|id|no\.?|#?\s*:?))\s*[:#]?\s*(ORD-\d+|\d{3,12})/i) ||
+          message.match(/\b(ORD-\d+)\b/i) ||
+          message.match(/#(\d{4,12})/) ||
+          message.match(/\b(\d{5,12})\b/);
+        if (orderMatch) {
+          const raw = orderMatch[1].toUpperCase();
+          result.orderNumber = raw.startsWith("ORD-") ? raw : `ORD-${raw}`;
+        }
+      }
+    }
   }
 
   const trackingMatch =
@@ -232,20 +251,16 @@ export function checkMissingDetails(
   state: ConversationState,
 ): MissingDetails {
   const hasOrderNumber = !!state.collectedDetails.orderNumber;
-  const hasTrackingNumber = !!state.collectedDetails.trackingNumber;
 
   const missing: MissingDetails = {
     orderNumber: !hasOrderNumber,
-    trackingNumber: !hasTrackingNumber,
+    trackingNumber: false,
     description: [],
   };
 
   if (state.classification.includes("company_follow_up") || state.classification === "legal_risk") {
     if (!hasOrderNumber) {
       missing.description.push("order ID");
-    }
-    if (!hasTrackingNumber && state.classification !== "company_follow_up_refund") {
-      missing.description.push("tracking number");
     }
   }
 

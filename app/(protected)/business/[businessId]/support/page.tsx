@@ -5,7 +5,7 @@ import CustomerServicePage from "@/components/ui/support/CustomerServicePage";
 
 const BusinessSupport = () => {
   const params = useParams();
-  const businessId = params.id as string;
+  const businessId = params.businessId as string;
   return <CustomerServicePage businessId={businessId} />;
 };
 

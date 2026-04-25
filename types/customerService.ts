@@ -32,8 +32,26 @@ export type ConversationPhase =
   | "proposing_action"
   | "action_confirmed"
   | "action_denied"
+  | "awaiting_finalize"
   | "resolved"
   | "escalated";
+
+export interface PendingTicketData {
+  orderId: string | null;
+  shopId: string | null;
+  productId: string | null;
+  orderProductTitle: string | null;
+  orderStatus: string | null;
+  orderTotal: number | null;
+  classification: ClassificationType;
+  issueType: string;
+  priority: string;
+  tier: CustomerServiceTier;
+  actionType: CustomerServiceActionType;
+  actionSummary: string | null;
+  customerIssue: string;
+  agentReply: string;
+}
 
 export interface CollectedDetails {
   orderNumber?: string;
@@ -53,6 +71,10 @@ export interface ConversationState {
   orderId: string | null;
   orderStatus: string | null;
   orderTotal: number | null;
+  orderProductTitle: string | null;
+  shopId: string | null;
+  productId: string | null;
+  pendingTicket: PendingTicketData | null;
   turnCount: number;
 }
 
