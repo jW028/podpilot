@@ -9,6 +9,7 @@ import {
 import type { Metrics, ToolState, DetectAnomaliesResult} from '@/lib/types';
 import { handleFinanceSignals } from '@/lib/agents/orchestrator/signalHandler';
 import { processIncomingMessages } from '@/lib/agents/finance/receiveHandler';
+import { setAgentState } from '@/lib/agents/shared/agentStateManager';
 
 
 // GLM uses the OpenAI SDK — just swap the base URL
@@ -31,6 +32,11 @@ const supabase = createClient(
 
 // ─── Main agent entry point ────────────────────────────────────────────────────
 export async function runFinanceAgent({ businessId, days = 30, userMessage = null }: { businessId: string; days?: number; userMessage?: string | null }) {
+  await setAgentState(businessId, 'finance_agent', 'running', 'Processing incoming messages', { days });
+  let finalState: 'idle' | 'error' = 'idle';
+  let finalTask: string | null = null;
+
+  try {
   const glm = getGlmClient();
 
   // Step 0: Process any incoming messages from other agents
@@ -51,6 +57,7 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
   const shopId = business.printify_shop_id;
   const printifyToken = process.env.PRINTIFY_DEV_TOKEN;
 
+  await setAgentState(businessId, 'finance_agent', 'running', `Loading business context`);
   // 2. Check cache FIRST — serve the most recent snapshot (within last 7 days).
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
@@ -128,6 +135,7 @@ Be specific, reference the numbers above, and keep your answer under 150 words.`
 
   // ── NORMAL MODE with valid cache (no userMessage): return snapshot directly ──
   if (!userMessage && hasValidCache) {
+    await setAgentState(businessId, 'finance_agent', 'idle', null, { cached: true });
     return {
       metrics: cached!.metrics,
       insights: cached!.insights,
@@ -145,7 +153,14 @@ Be specific, reference the numbers above, and keep your answer under 150 words.`
   const toolState: ToolState = {};  // { orders: [...], metrics: { summary, by_product } }
   const toolContext = { printifyToken, shopId, days, toolState };
 
+  const FINANCE_TOOL_LABELS: Record<string, string> = {
+    fetchPrintifyOrders: 'Fetching Printify orders...',
+    calculateProfitMetrics: 'Calculating profit metrics...',
+    detectAnomalies: 'Detecting anomalies...',
+  };
+
   async function executeTool(name: string, args: Record<string, unknown>) {
+    await setAgentState(businessId, 'finance_agent', 'running', FINANCE_TOOL_LABELS[name] ?? `Running ${name}...`);
     try {
       switch (name) {
         case 'fetchPrintifyOrders':
@@ -164,6 +179,7 @@ Be specific, reference the numbers above, and keep your answer under 150 words.`
     }
   }
 
+  await setAgentState(businessId, 'finance_agent', 'running', `Analysing last ${days} days`);
   // 5. Build the system prompt for the Finance Agent
   const systemPrompt = `You are the Finance Agent for "${business.name}", an AI-operated print-on-demand business on Podilot.
 
@@ -276,10 +292,20 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
     }
   }
 
+  finalState = 'idle';
+  finalTask = null;
   return {
     metrics: toolState.metrics || finalMetrics,
     insights: finalInsights,
     signals: toolState.signals || finalSignals,
     cached: false,
   };
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    finalState = 'error';
+    finalTask = errorMessage;
+    throw err;
+  } finally {
+    await setAgentState(businessId, 'finance_agent', finalState, finalTask);
+  }
 }

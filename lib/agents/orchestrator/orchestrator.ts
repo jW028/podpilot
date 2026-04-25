@@ -4,6 +4,8 @@ import { handleInterAgentSignal } from './handlers/interAgentSignal';
 import { handleProductLaunchPublish } from './handlers/productLaunchPublish';
 import { handleDesignToLaunch } from './handlers/designToLaunch';
 import { handleFinanceSignal } from './handlers/financeSignal';
+import { getAllAgentStates } from '@/lib/agents/shared/agentStateManager';
+export type { AgentState } from '@/lib/types/agent';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -114,6 +116,10 @@ export async function runOrchestrator(): Promise<{
 
   console.log(`[Orchestrator] Run complete: ${processed} processed, ${skipped} skipped, ${failed} failed.`);
   return { processed, skipped, failed };
+}
+
+export async function getAgentStates(businessId: string) {
+  return getAllAgentStates(businessId);
 }
 
 async function transitionState(id: string, state: WorkflowState, errorMessage?: string) {

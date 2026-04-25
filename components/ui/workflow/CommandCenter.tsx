@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Brain, Box, Rocket, LineChart, Send, AlertCircle, Clock, Check, RefreshCw } from "lucide-react";
 import type { WorkflowRow } from "@/lib/types/workflow";
+import type { AgentState } from "@/lib/types/agent";
 
 interface CommandCenterProps {
   businessId: string; // Could be a UUID or a slug (e.g. 'moki')
@@ -25,6 +26,7 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
   const supabase = createClient();
   const [realBusinessId, setRealBusinessId] = useState<string | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
+  const [agentStates, setAgentStates] = useState<AgentState[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "ai", text: "System online. Currently monitoring agent coordination for your store. How can I help you today?" }
@@ -33,26 +35,31 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 1. Resolve Slug to UUID and fetch initial data
   const refreshData = useCallback(async (uuid?: string) => {
     const targetId = uuid || realBusinessId;
     if (!targetId) return;
 
     setIsRefreshing(true);
-    const { data } = await supabase
-      .from("workflows")
-      .select("*")
-      .eq("business_id", targetId)
-      .order("created_at", { ascending: false })
-      .limit(20);
-    
-    if (data) setWorkflows(data as WorkflowRow[]);
+    const [{ data: wfData }, { data: statesData }] = await Promise.all([
+      supabase
+        .from("workflows")
+        .select("*")
+        .eq("business_id", targetId)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase
+        .from("agent_states")
+        .select("*")
+        .eq("business_id", targetId),
+    ]);
+
+    if (wfData) setWorkflows(wfData as WorkflowRow[]);
+    if (statesData) setAgentStates(statesData as AgentState[]);
     setIsRefreshing(false);
   }, [realBusinessId, supabase]);
 
   useEffect(() => {
     const init = async () => {
-      // If businessId is not a UUID, resolve it
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(businessId);
       let uuid = businessId;
 
@@ -68,9 +75,10 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
       setRealBusinessId(uuid);
       refreshData(uuid);
 
-      // Subscribe to real-time updates with a unique channel name to avoid race conditions
-      const channel = supabase
-        .channel(`workflows-${uuid}-${Math.random().toString(36).slice(2)}`)
+      const channelSuffix = `${uuid}-${Math.random().toString(36).slice(2)}`;
+
+      const workflowsChannel = supabase
+        .channel(`workflows-${channelSuffix}`)
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "workflows", filter: `business_id=eq.${uuid}` },
@@ -86,8 +94,28 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
         )
         .subscribe();
 
+      const agentStatesChannel = supabase
+        .channel(`agent-states-${channelSuffix}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "agent_states", filter: `business_id=eq.${uuid}` },
+          (payload) => {
+            if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+              const incoming = payload.new as AgentState;
+              setAgentStates((prev) => {
+                const exists = prev.some((s) => s.agent_name === incoming.agent_name);
+                return exists
+                  ? prev.map((s) => (s.agent_name === incoming.agent_name ? incoming : s))
+                  : [...prev, incoming];
+              });
+            }
+          }
+        )
+        .subscribe();
+
       return () => {
-        supabase.removeChannel(channel);
+        supabase.removeChannel(workflowsChannel);
+        supabase.removeChannel(agentStatesChannel);
       };
     };
 
@@ -112,17 +140,16 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
         body: JSON.stringify({ message: userMsg }),
       });
       const data = await res.json();
-      
+
       if (data.error) {
         setMessages((prev) => [...prev, { role: "ai", text: `Error: ${data.error}` }]);
       } else if (data.reply) {
         setMessages((prev) => [...prev, { role: "ai", text: data.reply }]);
       }
-    } catch (err) {
+    } catch {
       setMessages((prev) => [...prev, { role: "ai", text: "Network error. Please check your connection." }]);
     } finally {
       setIsTyping(false);
-      // Fallback: manually refresh after 1s in case Realtime is slow
       setTimeout(() => refreshData(), 1500);
     }
   };
@@ -130,7 +157,6 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
   const TWO_MINUTES_AGO = new Date(Date.now() - 2 * 60 * 1000).toISOString();
   const activeWorkflows = workflows.filter((w) => {
     if (w.state !== "pending" && w.state !== "processing") return false;
-    // agent_active rows are ephemeral — discard if older than 2 min (stuck/failed cleanup)
     if (w.type === "agent_active" && w.created_at < TWO_MINUTES_AGO) return false;
     return true;
   });
@@ -139,11 +165,24 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
   );
   const currentActive = activeWorkflows[0];
 
-  const getAgentStatus = (agentId: string) => {
+  const getAgentStatus = (agentId: string): "Running" | "Waiting" | "Idle" | "Error" => {
     if (agentId === "orchestrator") return "Running";
+    // Prefer self-reported state from agent_states table
+    const agentState = agentStates.find((s) => s.agent_name === agentId);
+    if (agentState) {
+      if (agentState.state === "running") return "Running";
+      if (agentState.state === "error") return "Error";
+      return "Idle";
+    }
+    // Fallback: infer from active workflows
     const active = activeWorkflows.find((w) => w.target_agent === agentId);
     if (!active) return "Idle";
     return active.state === "processing" ? "Running" : "Waiting";
+  };
+
+  const getAgentCurrentTask = (agentId: string): string | null => {
+    const agentState = agentStates.find((s) => s.agent_name === agentId);
+    return agentState?.current_task ?? null;
   };
 
   return (
@@ -155,8 +194,8 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
             <div className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">
               Active Workflow {currentActive ? `· ${currentActive.type.replace(/_/g, " ")}` : "· None"}
             </div>
-            <button 
-              onClick={() => refreshData()} 
+            <button
+              onClick={() => refreshData()}
               disabled={isRefreshing}
               className="p-1 hover:bg-neutral-200 rounded-md transition-colors"
               title="Refresh status"
@@ -168,7 +207,9 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
           <div className="flex flex-col items-center gap-6 relative z-10 overflow-y-auto py-4 [&::-webkit-scrollbar]:hidden">
             {AGENTS.map((agent, i) => {
               const status = getAgentStatus(agent.id);
+              const currentTask = getAgentCurrentTask(agent.id);
               const isActive = status === "Running" || status === "Waiting";
+              const isError = status === "Error";
               const Icon = agent.icon;
 
               return (
@@ -176,9 +217,11 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                   <div className={`w-80 rounded-xl p-4 border transition-all duration-300 ${
                     agent.id === "orchestrator"
                       ? "bg-[#141412] border-[#2A2A27] text-white shadow-lg"
-                      : isActive
-                        ? "bg-white border-[#C9A84C] shadow-[0_0_15px_rgba(201,168,76,0.15)] scale-[1.02]"
-                        : "bg-white/60 border-[#E8E7E2] opacity-70"
+                      : isError
+                        ? "bg-white border-red-300 shadow-[0_0_10px_rgba(239,68,68,0.1)]"
+                        : isActive
+                          ? "bg-white border-[#C9A84C] shadow-[0_0_15px_rgba(201,168,76,0.15)] scale-[1.02]"
+                          : "bg-white/60 border-[#E8E7E2] opacity-70"
                   }`}>
                     <div className="flex items-start justify-between">
                       <div className="flex gap-3">
@@ -194,17 +237,18 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                           </div>
                         </div>
                       </div>
-                      
+
                       {status !== "Idle" && (
                         <div className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                           status === "Running" ? "bg-amber-100 text-amber-700" :
+                          status === "Error"   ? "bg-red-100 text-red-600" :
                           "bg-neutral-100 text-neutral-600"
                         }`}>
                           {status}
                         </div>
                       )}
                     </div>
-                    
+
                     {agent.id === "orchestrator" && currentActive && (
                       <div className="mt-3 flex gap-2">
                         <div className="text-[10px] bg-[#2A2A27] px-2 py-1 rounded text-neutral-300">
@@ -222,12 +266,19 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                           <div className="bg-[#C9A84C] h-full w-2/3 animate-pulse rounded-full" />
                         </div>
                         <div className="text-[10px] text-amber-600 mt-2 font-medium">
-                          Agent executing logic...
+                          {currentTask ?? "Agent executing logic..."}
                         </div>
                       </div>
                     )}
+
+                    {isError && agent.id !== "orchestrator" && (
+                      <div className="mt-3 text-[10px] text-red-500 font-medium flex items-center gap-1">
+                        <AlertCircle size={11} />
+                        {currentTask ?? "Last run encountered an error"}
+                      </div>
+                    )}
                   </div>
-                  
+
                   {i < AGENTS.length - 1 && (
                     <div className={`w-0.5 h-6 transition-colors duration-300 ${isActive ? "bg-[#C9A84C]" : "bg-[#E8E7E2]"}`} />
                   )}
@@ -293,8 +344,8 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                 {msg.role === "ai" ? "AI" : "ME"}
               </div>
               <div className={`p-3 rounded-2xl text-sm leading-relaxed max-w-[85%] shadow-sm ${
-                msg.role === "ai" 
-                  ? "bg-white border border-[#E8E7E2] text-[#141412] rounded-tl-sm" 
+                msg.role === "ai"
+                  ? "bg-white border border-[#E8E7E2] text-[#141412] rounded-tl-sm"
                   : "bg-[#141412] text-white rounded-tr-sm"
               }`}>
                 {msg.text}
