@@ -156,13 +156,30 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
 
   const TWO_MINUTES_AGO = new Date(Date.now() - 2 * 60 * 1000).toISOString();
   const activeWorkflows = workflows.filter((w) => {
-    if (w.state !== "pending" && w.state !== "processing") return false;
+    if (w.state !== "pending" && w.state !== "processing" && w.state !== "awaiting_approval") return false;
     if (w.type === "agent_active" && w.created_at < TWO_MINUTES_AGO) return false;
     return true;
   });
   const recentWorkflows = workflows.filter(
     (w) => (w.state === "processed" || w.state === "failed") && w.type !== "agent_active",
   );
+  const awaitingApproval = workflows.filter((w) => w.state === "awaiting_approval");
+
+  const handleApprove = async (workflowId: string) => {
+    try {
+      const res = await fetch(`/api/business/${businessId}/workflows/${workflowId}/approve`, {
+        method: "PATCH",
+      });
+      if (res.ok) {
+        refreshData();
+      } else {
+        const data = await res.json();
+        setMessages((prev) => [...prev, { role: "ai", text: `Approval failed: ${data.error}` }]);
+      }
+    } catch {
+      setMessages((prev) => [...prev, { role: "ai", text: "Failed to approve workflow." }]);
+    }
+  };
   const currentActive = activeWorkflows[0];
 
   const getAgentStatus = (agentId: string): "Running" | "Waiting" | "Idle" | "Error" => {
@@ -186,7 +203,7 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto h-[800px]">
+    <div className="flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto h-[calc(100vh-120px)] min-h-[700px]">
       {/* LEFT PANEL: DAG & Logs */}
       <div className="flex-1 flex flex-col gap-6">
         <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-xl p-8 flex-1 flex flex-col relative overflow-hidden bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px]">
@@ -204,10 +221,11 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
             </button>
           </div>
 
-          <div className="flex flex-col items-center gap-6 relative z-10 overflow-y-auto py-4 [&::-webkit-scrollbar]:hidden">
+          <div className="flex flex-col items-center relative z-10 overflow-y-auto py-4 [&::-webkit-scrollbar]:hidden">
             {AGENTS.map((agent, i) => {
               const status = getAgentStatus(agent.id);
               const currentTask = getAgentCurrentTask(agent.id);
+              const pendingApproval = awaitingApproval.find((wf) => wf.target_agent === agent.id);
               const isActive = status === "Running" || status === "Waiting";
               const isError = status === "Error";
               const Icon = agent.icon;
@@ -219,9 +237,11 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                       ? "bg-[#141412] border-[#2A2A27] text-white shadow-lg"
                       : isError
                         ? "bg-white border-red-300 shadow-[0_0_10px_rgba(239,68,68,0.1)]"
-                        : isActive
-                          ? "bg-white border-[#C9A84C] shadow-[0_0_15px_rgba(201,168,76,0.15)] scale-[1.02]"
-                          : "bg-white/60 border-[#E8E7E2] opacity-70"
+                        : pendingApproval
+                          ? "bg-white border-blue-400 shadow-[0_0_15px_rgba(96,165,250,0.2)] scale-[1.02]"
+                          : isActive
+                            ? "bg-white border-[#C9A84C] shadow-[0_0_15px_rgba(201,168,76,0.15)] scale-[1.02]"
+                            : "bg-white/60 border-[#E8E7E2] opacity-70"
                   }`}>
                     <div className="flex items-start justify-between">
                       <div className="flex gap-3">
@@ -238,7 +258,11 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                         </div>
                       </div>
 
-                      {status !== "Idle" && (
+                      {pendingApproval ? (
+                        <div className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
+                          Awaiting
+                        </div>
+                      ) : status !== "Idle" && (
                         <div className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                           status === "Running" ? "bg-amber-100 text-amber-700" :
                           status === "Error"   ? "bg-red-100 text-red-600" :
@@ -277,10 +301,24 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                         {currentTask ?? "Last run encountered an error"}
                       </div>
                     )}
+
+                    {pendingApproval && (
+                      <div className="mt-3 pt-3 border-t border-blue-100 flex items-center justify-between">
+                        <div className="text-[10px] text-blue-600 font-medium">
+                          {pendingApproval.type.replace(/_/g, " ")}
+                        </div>
+                        <button
+                          onClick={() => handleApprove(pendingApproval.id)}
+                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-semibold rounded-md transition-colors"
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {i < AGENTS.length - 1 && (
-                    <div className={`w-0.5 h-6 transition-colors duration-300 ${isActive ? "bg-[#C9A84C]" : "bg-[#E8E7E2]"}`} />
+                    <div className={`w-0.5 h-8 transition-colors duration-300 ${isActive ? "bg-[#C9A84C]" : "bg-[#E8E7E2]"}`} />
                   )}
                 </div>
               );
@@ -289,7 +327,7 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
         </div>
 
         {/* RECENT WORKFLOWS */}
-        <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-xl p-6 overflow-hidden flex flex-col h-[280px]">
+        <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-xl p-6 overflow-hidden flex flex-col h-[180px]">
           <div className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4">
             Recent Activity Log
           </div>
@@ -371,6 +409,7 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
             {currentActive.target_agent?.replace("_", " ")}: {currentActive.state}...
           </div>
         )}
+
 
         <div className="p-4 border-t border-[#E8E7E2] bg-white rounded-b-xl">
           <div className="flex items-center gap-2 bg-[#FAFAF8] border border-[#E8E7E2] rounded-lg p-2 focus-within:border-[#C9A84C] transition-all shadow-inner">
