@@ -287,7 +287,8 @@ Rules:
 - Use external research context to provide current market signals, competitive pressure, and risk notes.
 - Do NOT blindly agree with user ideas. Discuss tradeoffs: what is strong, what is risky, and what should be improved.
 - If idea quality is weak, suggest a sharper angle and ask if the user still wants to proceed.
-- Only set frameworkReady=true when details are complete AND user clearly wants to proceed after discussion.
+- If the user explicitly confirms they are confident or want to proceed with the current direction, you MUST set frameworkReady=true and populate the framework object completely.
+- If the user asks for changes, tweaks, or gives a new direction, you MUST set frameworkReady=false and framework=null until the new direction is finalized.
 
 ${externalResearchContext}
 
@@ -394,11 +395,17 @@ Start your response with { and end with }. Nothing else.`;
 
     console.log("[chat/route] Raw model content:\n", content ?? "(empty)");
 
+    const downtimePayload = {
+      reply: "Our AI servers are currently experiencing high traffic and downtime. Please try sending your message again in a few minutes!",
+      frameworkReady: false,
+      framework: undefined,
+    };
+
     if (!content) {
       return NextResponse.json(
         {
           success: true,
-          data: fallbackPayload,
+          data: downtimePayload,
           message: "Models unavailable or returned empty response.",
         },
         { status: 200 },
@@ -422,7 +429,7 @@ Start your response with { and end with }. Nothing else.`;
       return NextResponse.json(
         {
           success: true,
-          data: fallbackPayload,
+          data: downtimePayload,
           message: "Model response format invalid, using fallback.",
         },
         { status: 200 },

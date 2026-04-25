@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import Button from "../shared/Button";
 import { useAuth } from "@/hooks/useAuth";
 import ProfileDropdown from "../shared/ProfileDropdown";
@@ -15,15 +14,21 @@ const Header = () => {
     ? "flex justify-between items-center px-6 py-4 border-b border-neutral-300 bg-light"
     : "flex justify-between items-center px-8 py-5 bg-neutral-50";
 
+  if (loading) {
+    return (
+      <div className="fixed bg-inherit z-10 h-screen w-screen flex justify-center items-center">
+        <LoadingState message="Loading..." />
+      </div>
+    );
+  }
+
   return (
     <div className={containerClass}>
       <div className="flex justify-center items-center">
         <Logo />
       </div>
       <div className="flex justify-center items-center">
-        {loading ? (
-          <LoadingState message="Loading..." />
-        ) : user ? (
+        {user ? (
           // Logged in state
           <div className="flex items-center gap-2">
             <ProfileDropdown />
@@ -34,18 +39,12 @@ const Header = () => {
         ) : (
           // Not logged in state
           <div className="flex justify-center items-center gap-4">
-            <Link
-              href="/login"
-              className="text-neutral-900 hover:text-primary-500 transition text-sm font-medium"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/register"
-              className="bg-neutral-900 text-white hover:bg-neutral-700 px-5 py-2 text-sm font-medium rounded-full transition"
-            >
+            <Button variant="outline" size="sm" href="/login">
+              Log In
+            </Button>
+            <Button variant="primary" size="sm" href="/register">
               Get started
-            </Link>
+            </Button>
           </div>
         )}
       </div>
