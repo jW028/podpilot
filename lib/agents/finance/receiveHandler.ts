@@ -122,17 +122,60 @@ export async function processIncomingMessages(
 
           case 'refund_processed': {
             const p = row.payload as unknown as RefundProcessedPayload;
-            console.log(
-              `[FinanceAgent:receive] Refund of RM ${p.refund_amount} processed for ${p.product_title} (order ${p.order_id})`
-            );
-            if (p.reason === 'damaged' || p.reason === 'wrong item') {
-              console.warn(
-                `[FinanceAgent:receive] WARNING: refund reason "${p.reason}" for ${p.product_title} — product quality should be reviewed`
-              );
+            const isFlagged = p.reason === 'damaged' || p.reason === 'wrong item';
+
+            const { data: snapshot } = await supabase
+              .from('finance_snapshots')
+              .select('id, signals')
+              .eq('business_id', row.business_id)
+              .order('snapshot_date', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (snapshot) {
+              const existing = (snapshot.signals as Record<string, unknown> & { refunds?: unknown[] }) ?? {};
+              const refunds: unknown[] = Array.isArray(existing.refunds) ? existing.refunds : [];
+              refunds.push({
+                order_id: p.order_id,
+                product_id: p.product_id,
+                product_title: p.product_title,
+                refund_amount: p.refund_amount,
+                reason: p.reason,
+                refunded_at: p.refunded_at,
+                flagged: isFlagged,
+              });
+
+              await supabase
+                .from('finance_snapshots')
+                .update({ signals: { ...existing, refunds } })
+                .eq('id', snapshot.id);
+
+              console.log(`[FinanceAgent:receive] Appended refund RM ${p.refund_amount} to snapshot signals`);
+            }
+
+            if (isFlagged) {
+              await supabase.from('workflows').insert({
+                business_id: row.business_id,
+                type: 'inter_agent_signal',
+                source_agent: 'finance_agent',
+                target_agent: 'launch_agent',
+                state: 'pending',
+                payload: {
+                  signal: {
+                    type: 'product_signal',
+                    action: 'review',
+                    product_id: p.product_id,
+                    product_title: p.product_title,
+                    reason: `Refund flagged: ${p.reason}`,
+                    refund_amount: p.refund_amount,
+                    order_id: p.order_id,
+                  },
+                },
+              });
+              console.warn(`[FinanceAgent:receive] Flagged ${p.product_title} for launch agent review`);
             }
             break;
           }
-
           case 'business_created': {
             const p = row.payload as unknown as BusinessCreatedPayload;
             console.log(
@@ -175,9 +218,31 @@ export async function processIncomingMessages(
 
           case 'design_completed': {
             const p = row.payload as unknown as DesignCompletedPayload;
-            console.log(
-              `[FinanceAgent:receive] Design completed for ${p.product_title}, design cost: RM ${p.design_cost}`
-            );
+
+            const { data: product } = await supabase
+              .from('products')
+              .select('id, attributes')
+              .eq('id', p.product_id)
+              .eq('business_id', row.business_id)
+              .maybeSingle();
+
+            if (product) {
+              const existing = (product.attributes as Record<string, unknown>) ?? {};
+              await supabase
+                .from('products')
+                .update({
+                  attributes: {
+                    ...existing,
+                    design_cost: p.design_cost,
+                    design_completed_at: p.completed_at,
+                  },
+                })
+                .eq('id', product.id);
+
+              console.log(`[FinanceAgent:receive] Stored design cost RM ${p.design_cost} in products.attributes for ${p.product_title}`);
+            } else {
+              console.warn(`[FinanceAgent:receive] Product ${p.product_id} not found, design cost not stored`);
+            }
             break;
           }
 
