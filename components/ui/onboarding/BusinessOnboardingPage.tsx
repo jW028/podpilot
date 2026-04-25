@@ -116,6 +116,11 @@ const BusinessOnboardingPage = ({
       if (savedFramework) {
         setFramework(JSON.parse(savedFramework));
       }
+      
+      const savedConfirmed = sessionStorage.getItem(`confirmed_${businessId}`);
+      if (savedConfirmed === "true") {
+        setHasConfirmed(true);
+      }
     } catch (e) {
       console.error("Failed to load session storage:", e);
     }
@@ -137,6 +142,7 @@ const BusinessOnboardingPage = ({
   const [draftMessage, setDraftMessage] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasConfirmed, setHasConfirmed] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -215,6 +221,8 @@ const BusinessOnboardingPage = ({
       }
 
       setSuccess("Business direction confirmed. Redirecting to workflow...");
+      setHasConfirmed(true);
+      sessionStorage.setItem(`confirmed_${businessId}`, "true");
       router.push(result.redirectTo || `/business/${businessId}/workflow`);
     } catch (submitError) {
       console.error(submitError);
@@ -387,14 +395,20 @@ const BusinessOnboardingPage = ({
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() =>
+                    className={hasConfirmed ? "!bg-green-600 !text-white cursor-default pointer-events-none hover:!bg-green-600" : ""}
+                    onClick={() => {
+                      if (hasConfirmed) return;
                       submitConfirmation(
                         "Yes, proceed with this business direction",
-                      )
-                    }
+                      );
+                    }}
                     disabled={isSubmitting}
                   >
-                    {isSubmitting ? "Confirming..." : "Confirm and Continue"}
+                    {hasConfirmed 
+                      ? "Already Confirmed" 
+                      : isSubmitting 
+                        ? "Confirming..." 
+                        : "Confirm and Continue"}
                   </Button>
                 </div>
               </div>
