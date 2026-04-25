@@ -20,6 +20,7 @@ export async function handleInterAgentSignal(row: WorkflowRow): Promise<HandlerR
     if (signal.action === 'retire') {
       return handleRetire(row, signal);
     }
+    
     return { status: 'skipped', reason: `Unhandled action "${signal.action}" for launch_agent` };
   }
 

@@ -34,12 +34,6 @@ interface BusinessCreatedPayload {
   target_margin_percent?: number;
 }
 
-interface DesignCompletedPayload {
-  product_id: string;
-  product_title: string;
-  design_cost: number;
-  completed_at: string;
-}
 
 export interface ProcessIncomingMessagesResult {
   processed: number;
@@ -104,7 +98,7 @@ export async function processIncomingMessages(
             console.log(
               `[FinanceAgent:receive] Price updated for ${p.product_title}: RM ${p.old_price} → RM ${p.new_price}`
             );
-            // Sync new price to products.price
+
             if (p.product_id && p.new_price > 0) {
               const { error: priceErr } = await supabase
                 .from('products')
@@ -150,32 +144,18 @@ export async function processIncomingMessages(
                 .update({ signals: { ...existing, refunds } })
                 .eq('id', snapshot.id);
 
-              console.log(`[FinanceAgent:receive] Appended refund RM ${p.refund_amount} to snapshot signals`);
+              if (isFlagged) {
+                console.warn(`[FinanceAgent:receive] Flagged refund recorded for ${p.product_title} — reason: ${p.reason}`);
+              } else {
+                console.log(`[FinanceAgent:receive] Appended refund RM ${p.refund_amount} to snapshot signals`);
+              }
+            } else {
+              console.warn(`[FinanceAgent:receive] No snapshot found for business ${row.business_id}, refund not recorded`);
             }
 
-            if (isFlagged) {
-              await supabase.from('workflows').insert({
-                business_id: row.business_id,
-                type: 'inter_agent_signal',
-                source_agent: 'finance_agent',
-                target_agent: 'launch_agent',
-                state: 'pending',
-                payload: {
-                  signal: {
-                    type: 'product_signal',
-                    action: 'review',
-                    product_id: p.product_id,
-                    product_title: p.product_title,
-                    reason: `Refund flagged: ${p.reason}`,
-                    refund_amount: p.refund_amount,
-                    order_id: p.order_id,
-                  },
-                },
-              });
-              console.warn(`[FinanceAgent:receive] Flagged ${p.product_title} for launch agent review`);
-            }
             break;
           }
+
           case 'business_created': {
             const p = row.payload as unknown as BusinessCreatedPayload;
             console.log(
@@ -212,36 +192,6 @@ export async function processIncomingMessages(
                   insertErr.message
                 );
               }
-            }
-            break;
-          }
-
-          case 'design_completed': {
-            const p = row.payload as unknown as DesignCompletedPayload;
-
-            const { data: product } = await supabase
-              .from('products')
-              .select('id, attributes')
-              .eq('id', p.product_id)
-              .eq('business_id', row.business_id)
-              .maybeSingle();
-
-            if (product) {
-              const existing = (product.attributes as Record<string, unknown>) ?? {};
-              await supabase
-                .from('products')
-                .update({
-                  attributes: {
-                    ...existing,
-                    design_cost: p.design_cost,
-                    design_completed_at: p.completed_at,
-                  },
-                })
-                .eq('id', product.id);
-
-              console.log(`[FinanceAgent:receive] Stored design cost RM ${p.design_cost} in products.attributes for ${p.product_title}`);
-            } else {
-              console.warn(`[FinanceAgent:receive] Product ${p.product_id} not found, design cost not stored`);
             }
             break;
           }
