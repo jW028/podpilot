@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import ProductsPageHeader from "./ProductsPageHeader";
 import ProductsPageContent from "./ProductsPageContent";
 import { Product } from "@/lib/types";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 interface ProductsPageProps {
   businessId: string;
@@ -18,10 +18,12 @@ const ProductsPage = ({
   totalProducts,
 }: ProductsPageProps) => {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const autoCreateFired = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [error, setError] = useState<string | null>(null);
 
-  const handleCreateProduct = async () => {
+  const handleCreateProduct = async (designPrompt?: string) => {
     try {
       const response = await fetch(`/api/business/${businessId}/products`, {
         method: "POST",
@@ -36,13 +38,23 @@ const ProductsPage = ({
       }
 
       const newProduct = (await response.json()) as Product;
-      router.push(
-        `/business/${businessId}/products/${newProduct.id}?creating=true`,
-      );
+      const dest = designPrompt
+        ? `/business/${businessId}/products/${newProduct.id}?creating=true&designPrompt=${encodeURIComponent(designPrompt)}`
+        : `/business/${businessId}/products/${newProduct.id}?creating=true`;
+      router.push(dest);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create product");
     }
   };
+
+  // Auto-create a product when arriving from the orchestrator with a design prompt
+  useEffect(() => {
+    const prompt = searchParams?.get("designPrompt");
+    if (!prompt || autoCreateFired.current) return;
+    autoCreateFired.current = true;
+    handleCreateProduct(prompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>

@@ -98,7 +98,6 @@ const BUSINESS_NAV: NavItem[] = [
     href: "support",
     icon: <BiSupport />,
     businessScoped: true,
-    badge: 8,
   },
   {
     label: "Finance & Analytics",

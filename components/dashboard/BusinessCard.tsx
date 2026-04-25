@@ -121,8 +121,10 @@ const BusinessCard = ({
           <p className="text-xs text-neutral-400 uppercase tracking-wide mb-1">
             Platform
           </p>
-          <p className="text-lg font-semibold text-dark capitalize">
-            {marketplace || "—"}
+          <p className="text-lg font-semibold text-dark">
+            {marketplace
+              ? marketplace.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+              : "—"}
           </p>
         </div>
       </div>

@@ -217,7 +217,8 @@ async function fetchVariantIds(
   token: string,
   blueprintId: number,
   printProviderId: number,
-): Promise<number[]> {
+): Promise<{ providerId: number; variantIds: number[] }> {
+  // Try the requested print provider first
   try {
     const data = await printifyRequest<{
       variants?: Array<{ id: number; is_available?: boolean }>;
@@ -231,13 +232,44 @@ async function fetchVariantIds(
       .slice(0, 4)
       .map((v) => v.id);
     if (available.length > 0) {
-      console.log(`Fetched ${available.length} variants for blueprint ${blueprintId}:`, available);
-      return available;
+      console.log(`Fetched ${available.length} variants for blueprint ${blueprintId} / provider ${printProviderId}:`, available);
+      return { providerId: printProviderId, variantIds: available };
+    }
+  } catch {
+    console.warn(`Provider ${printProviderId} not valid for blueprint ${blueprintId} — auto-discovering valid provider...`);
+  }
+
+  // Auto-discover a valid print provider for this blueprint
+  try {
+    const providers = await printifyRequest<Array<{ id: number; title: string }>>(
+      "GET",
+      `/catalog/blueprints/${blueprintId}/print_providers.json`,
+      token,
+    );
+    for (const provider of (providers ?? []).slice(0, 5)) {
+      try {
+        const data = await printifyRequest<{
+          variants?: Array<{ id: number; is_available?: boolean }>;
+        }>(
+          "GET",
+          `/catalog/blueprints/${blueprintId}/print_providers/${provider.id}/variants.json`,
+          token,
+        );
+        const available = (data.variants ?? [])
+          .filter((v) => v.is_available !== false)
+          .slice(0, 4)
+          .map((v) => v.id);
+        if (available.length > 0) {
+          console.log(`Auto-selected provider ${provider.id} (${provider.title}) for blueprint ${blueprintId}:`, available);
+          return { providerId: provider.id, variantIds: available };
+        }
+      } catch { /* try next provider */ }
     }
   } catch (e) {
-    console.warn("Failed to fetch variants from Printify catalog:", e);
+    console.warn(`Failed to fetch print providers for blueprint ${blueprintId}:`, e);
   }
-  return [45740, 45742, 45744, 45746];
+
+  return { providerId: printProviderId, variantIds: [] };
 }
 
 async function uploadPlaceholderImageToPrintify(
@@ -329,12 +361,25 @@ export async function createPrintifyProduct({
   }
 
   const blueprintId = blueprintIdOverride ?? Number(process.env.PRINTIFY_BLUEPRINT_ID || 384);
-  const printProviderId = printProviderIdOverride ?? Number(process.env.PRINTIFY_PROVIDER_ID || 1);
-  const variantIds = variantIdsOverride ?? (
-    process.env.PRINTIFY_VARIANT_IDS
-      ? parseVariantIds(process.env.PRINTIFY_VARIANT_IDS, [45740, 45742, 45744, 45746])
-      : await fetchVariantIds(printifyToken, blueprintId, printProviderId)
-  );
+  const requestedProviderId = printProviderIdOverride ?? Number(process.env.PRINTIFY_PROVIDER_ID || 1);
+
+  let printProviderId = requestedProviderId;
+  let variantIds: number[];
+
+  if (variantIdsOverride) {
+    variantIds = variantIdsOverride;
+  } else if (process.env.PRINTIFY_VARIANT_IDS) {
+    variantIds = parseVariantIds(process.env.PRINTIFY_VARIANT_IDS, []);
+  } else {
+    const resolved = await fetchVariantIds(printifyToken, blueprintId, requestedProviderId);
+    printProviderId = resolved.providerId;
+    variantIds = resolved.variantIds;
+  }
+
+  if (variantIds.length === 0) {
+    console.error(`No valid variants found for blueprint ${blueprintId} — aborting product creation.`);
+    return mockPrintifyCreation(productData, prices);
+  }
 
   try {
     console.log("Creating product on Printify...", {

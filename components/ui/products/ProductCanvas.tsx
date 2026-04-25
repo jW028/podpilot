@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { DragDropContext, Droppable, DropResult } from "react-beautiful-dnd";
+import { DragDropContext, Droppable, DropResult } from "@hello-pangea/dnd";
 import EditableBlock, { Block } from "@/components/ui/products/EditableBlock";
 
 interface ProductCanvasProps {
@@ -21,6 +21,11 @@ const ProductCanvas = ({
   onImageUpload,
 }: ProductCanvasProps) => {
   const [canvasBlocks, setCanvasBlocks] = useState<Block[]>(blocks);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -67,9 +72,9 @@ const ProductCanvas = ({
               Describe your product idea to the Design Agent to get started
             </p>
           </div>
-        ) : (
+        ) : !mounted ? null : (
           <DragDropContext onDragEnd={handleDragEnd}>
-            <Droppable droppableId="canvas" type="CARD">
+            <Droppable droppableId="canvas" type="CARD" isDropDisabled={false}>
               {(provided, snapshot) => (
                 <div
                   ref={provided.innerRef}

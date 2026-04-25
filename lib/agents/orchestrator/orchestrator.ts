@@ -15,12 +15,12 @@ const supabase = createClient(
 const UNIMPLEMENTED_AGENTS: Set<AgentName> = new Set([
   'product_agent',
   'customer_service_agent',
+  'design_agent',
 ]);
 
 const HANDLERS: Record<string, (row: WorkflowRow) => Promise<HandlerResult>> = {
   launch_agent: handleInterAgentSignal,
   product_agent: handleInterAgentSignal,
-  design_agent: handleInterAgentSignal,
   finance_agent: handleFinanceSignal,
   product_launch_publish: handleProductLaunchPublish,
   design_to_launch: handleDesignToLaunch,
