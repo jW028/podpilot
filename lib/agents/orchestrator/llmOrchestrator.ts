@@ -9,6 +9,7 @@ import {
   executeLogDecision,
   executeGetReadyProducts,
   executeGetMarketResearch,
+  executeStartAgentPipeline,
 } from './tools';
 import { runOrchestrator } from './orchestrator';
 import type { AgentName } from '@/lib/types/workflow';
@@ -72,6 +73,15 @@ export async function executeTool(
       case 'getMarketResearch': {
         return await executeGetMarketResearch(args.query as string);
       }
+      case 'startAgentPipeline': {
+        const result = await executeStartAgentPipeline({
+          businessId,
+          agents: args.agents as Array<{ targetAgent: import('@/lib/types/workflow').AgentName; context: string }>,
+          userMessage: args.userMessage as string,
+        });
+        runOrchestrator().catch(e => console.error('[LLM Orchestrator] Pipeline trigger failed:', e));
+        return result;
+      }
       default:
         return { error: `Unknown tool: ${name}` };
     }
@@ -106,29 +116,30 @@ export async function runLlmOrchestrator({
 You coordinate specialized agents by using the tools provided. You do NOT answer from your own knowledge — always use tools to get real data.
 
 AGENTS YOU CAN COORDINATE:
-- finance_agent: Analyzes profit margins, detects anomalies, can reprice or retire underperforming products, provides financial insights
-- launch_agent: Creates products on Printify and publishes them to sales channels
-- customer_service_agent: Handles customer support tickets (refunds, replacements, order issues)
+- business_agent: Guides the user through clarifying their business idea, niche, and brand direction via the onboarding chat
+- design_agent: Creates a product design based on business context (interactive — user approves on the Design page)
+- launch_agent: Creates products on Printify and publishes them to sales channels (autonomous)
+- finance_agent: Analyzes profit margins, detects anomalies, reprices or retires underperforming products
 
 AVAILABLE TOOLS:
-- getAgentStates: Check which agents are idle, running, or in error state. Always call this before invoking an agent.
-- invokeAgent: Queue a task for an agent. Requires targetAgent and type. The agent will process it asynchronously.
-- getFinanceSnapshot: Get the latest cached financial metrics without running the finance agent. Use this for quick financial questions.
-- getRecentWorkflows: See recent activity across all agents. Useful for status reports.
-- getReadyProducts: See products that are ready to launch.
-- getMarketResearch: Search real-time prices and trends on Etsy, Shopee, and TikTok Shop for a product. Returns results immediately — no agent invoked.
-- logDecision: Log a decision to the Command Center activity log. Use this when you take a notable action.
+- startAgentPipeline: Activate multiple agents in sequence. Each agent waits for the previous to finish. Use for multi-step requests like "help me start a business and design a product".
+- invokeAgent: Queue a single task for one agent. Use for targeted single-agent requests.
+- getAgentStates: Check which agents are idle, running, or in error state.
+- getFinanceSnapshot: Get the latest cached financial metrics. Use for quick financial questions.
+- getRecentWorkflows: See recent activity across all agents.
+- getReadyProducts: See products ready to launch.
+- getMarketResearch: Search real-time prices and trends on Etsy, Shopee, TikTok Shop. Returns immediately — no agent invoked.
+- logDecision: Log a notable decision to the activity log.
 
 DECISION GUIDELINES:
-- For financial questions: call getFinanceSnapshot first. If no snapshot exists or it's stale (>7 days), invokeAgent for finance_agent with type "financial_analysis".
-- For product launch/publish requests: invokeAgent with targetAgent "launch_agent" and type "product_launch_publish".
-- For repricing/retiring products: invokeAgent with targetAgent "finance_agent" and type "financial_analysis" (it will detect and signal repricing).
-- For market research or pricing research on a product: call getMarketResearch directly — do NOT invoke an agent.
-- For product design requests (designing a new product from scratch): do NOT invoke any agent. Tell the user to use the Design tab in the dashboard — it provides an interactive AI-powered design experience.
-- If an agent is already running, tell the user and offer to queue the task.
-- For multi-step requests, call tools in sequence (e.g., get finance data then invoke agent).
+- "I don't have a business idea" / "help me start a business" / "I want to design and launch a product from scratch": use startAgentPipeline with [business_agent, design_agent, launch_agent]
+- "I have an idea, help me design a product": use startAgentPipeline with [business_agent, design_agent]
+- Financial questions: call getFinanceSnapshot first. If stale (>7 days), invokeAgent finance_agent with type "financial_analysis".
+- Product launch requests (product already designed): invokeAgent launch_agent with type "product_launch_publish".
+- Market research: call getMarketResearch directly — do NOT invoke an agent.
+- "Design a product" when business already exists: tell the user to use the Design tab — do NOT invoke any agent.
 - If unsure what the user wants, ask a clarifying question — do NOT guess.
-- Always be concise. Reference specific numbers when available. Keep responses under 150 words.`;
+- Always be concise. Keep responses under 150 words.`;
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },

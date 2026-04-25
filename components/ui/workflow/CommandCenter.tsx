@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Brain, Box, Rocket, LineChart, Send, AlertCircle, Clock, Check, RefreshCw } from "lucide-react";
+import { Brain, Box, Rocket, LineChart, Briefcase, Send, AlertCircle, Clock, Check, RefreshCw, ExternalLink } from "lucide-react";
 import type { WorkflowRow } from "@/lib/types/workflow";
 import type { AgentState } from "@/lib/types/agent";
 import MarkdownText from "@/components/ui/shared/MarkdownText";
@@ -18,11 +18,19 @@ interface ChatMessage {
 }
 
 const AGENTS = [
-  { id: "orchestrator",  name: "Orchestrator",   desc: "Central reasoning engine",  icon: Brain,     color: "text-purple-400" },
-  { id: "design_agent",  name: "Design Agent",   desc: "Product design & pricing",  icon: Box,       color: "text-teal-500"   },
-  { id: "launch_agent",  name: "Launch Agent",   desc: "Publish to marketplace",    icon: Rocket,    color: "text-rose-500"   },
-  { id: "finance_agent", name: "Finance Agent",  desc: "Profit analysis",           icon: LineChart, color: "text-blue-500"   },
+  { id: "orchestrator",   name: "Orchestrator",    desc: "Central reasoning engine", icon: Brain,     color: "text-purple-400" },
+  { id: "business_agent", name: "Business Agent",  desc: "Brand & niche strategy",   icon: Briefcase, color: "text-violet-500" },
+  { id: "design_agent",   name: "Design Agent",    desc: "Product design & pricing", icon: Box,       color: "text-teal-500"   },
+  { id: "launch_agent",   name: "Launch Agent",    desc: "Publish to marketplace",   icon: Rocket,    color: "text-rose-500"   },
+  { id: "finance_agent",  name: "Finance Agent",   desc: "Profit analysis",          icon: LineChart, color: "text-blue-500"   },
 ];
+
+const AGENT_ROUTES: Record<string, string> = {
+  business_agent: "onboarding",
+  design_agent:   "products",
+  launch_agent:   "products",
+  finance_agent:  "finance",
+};
 
 const WELCOME_MSG = "System online. Currently monitoring agent coordination for your store. How can I help you today?";
 
@@ -259,17 +267,24 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
 
               return (
                 <div key={agent.id} className="flex flex-col items-center">
-                  <div className={`w-80 rounded-xl p-4 border transition-all duration-300 ${
-                    agent.id === "orchestrator"
-                      ? "bg-[#141412] border-[#2A2A27] text-white shadow-lg"
-                      : isError
-                        ? "bg-white border-red-300 shadow-[0_0_10px_rgba(239,68,68,0.1)]"
-                        : pendingApproval
-                          ? "bg-white border-blue-400 shadow-[0_0_15px_rgba(96,165,250,0.2)] scale-[1.02]"
-                          : isActive
-                            ? "bg-white border-[#C9A84C] shadow-[0_0_15px_rgba(201,168,76,0.15)] scale-[1.02]"
-                            : "bg-white/60 border-[#E8E7E2] opacity-70"
-                  }`}>
+                  <div
+                    className={`group w-80 rounded-xl p-4 border transition-all duration-300 ${
+                      agent.id === "orchestrator"
+                        ? "bg-[#141412] border-[#2A2A27] text-white shadow-lg"
+                        : isError
+                          ? "bg-white border-red-300 shadow-[0_0_10px_rgba(239,68,68,0.1)] cursor-pointer hover:shadow-md"
+                          : pendingApproval
+                            ? "bg-white border-blue-400 shadow-[0_0_15px_rgba(96,165,250,0.2)] scale-[1.02] cursor-pointer hover:shadow-md"
+                            : isActive
+                              ? "bg-white border-[#C9A84C] shadow-[0_0_15px_rgba(201,168,76,0.15)] scale-[1.02] cursor-pointer hover:shadow-md"
+                              : "bg-white/60 border-[#E8E7E2] opacity-70 cursor-pointer hover:opacity-90 hover:shadow-sm"
+                    }`}
+                    onClick={() => {
+                      if (agent.id === "orchestrator") return;
+                      const tab = AGENT_ROUTES[agent.id];
+                      if (tab) router.push(`/business/${businessId}/${tab}`);
+                    }}
+                  >
                     <div className="flex items-start justify-between">
                       <div className="flex gap-3">
                         <div className={`mt-1 ${agent.color}`}>
@@ -285,19 +300,24 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                         </div>
                       </div>
 
-                      {pendingApproval ? (
-                        <div className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
-                          Awaiting
-                        </div>
-                      ) : status !== "Idle" && (
-                        <div className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                          status === "Running" ? "bg-amber-100 text-amber-700" :
-                          status === "Error"   ? "bg-red-100 text-red-600" :
-                          "bg-neutral-100 text-neutral-600"
-                        }`}>
-                          {status}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {pendingApproval ? (
+                          <div className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
+                            Awaiting
+                          </div>
+                        ) : status !== "Idle" && (
+                          <div className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                            status === "Running" ? "bg-amber-100 text-amber-700" :
+                            status === "Error"   ? "bg-red-100 text-red-600" :
+                            "bg-neutral-100 text-neutral-600"
+                          }`}>
+                            {status}
+                          </div>
+                        )}
+                        {agent.id !== "orchestrator" && (
+                          <ExternalLink size={11} className="text-neutral-300 group-hover:text-neutral-500 transition-colors" />
+                        )}
+                      </div>
                     </div>
 
                     {agent.id === "orchestrator" && currentActive && (

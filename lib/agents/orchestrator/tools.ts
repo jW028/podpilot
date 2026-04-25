@@ -128,6 +128,48 @@ export async function executeGetMarketResearch(query: string): Promise<{ results
   return { results };
 }
 
+export async function executeStartAgentPipeline(args: {
+  businessId: string;
+  agents: Array<{ targetAgent: AgentName; context: string }>;
+  userMessage: string;
+}): Promise<{ success: boolean; pipelineIds: string[]; error?: string }> {
+  const { businessId, agents, userMessage } = args;
+  const pipelineIds: string[] = [];
+  let previousId: string | null = null;
+
+  for (const agent of agents) {
+    const res = await supabase
+      .from('workflows')
+      .insert({
+        business_id: businessId,
+        type: 'agent_pipeline_task',
+        source_agent: 'orchestrator',
+        target_agent: agent.targetAgent,
+        state: 'pending',
+        depends_on: previousId,
+        payload: {
+          context: agent.context,
+          userMessage,
+          pipelineStep: pipelineIds.length,
+        },
+      })
+      .select('id')
+      .single();
+
+    const data = res.data as { id: string } | null;
+    const error = res.error;
+
+    if (error || !data) {
+      return { success: false, pipelineIds, error: error?.message ?? 'Insert failed' };
+    }
+
+    pipelineIds.push(data.id);
+    previousId = data.id;
+  }
+
+  return { success: true, pipelineIds };
+}
+
 export async function executeGetReadyProducts(businessId: string): Promise<Array<{ id: string; title: string; hasPrices: boolean }>> {
   const { data, error } = await supabase
     .from('products')
@@ -271,6 +313,44 @@ export const TOOL_DEFINITIONS = [
         properties: {},
         required: [],
         additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'startAgentPipeline',
+      description:
+        'Start a sequential pipeline of agents. Each agent waits for the previous one to complete before activating. Use this when the user wants multiple things done in sequence (e.g., clarify business idea → design a product → launch it). The user will see a task banner on each agent\'s page guiding them through each step.',
+      strict: false,
+      parameters: {
+        type: 'object',
+        properties: {
+          agents: {
+            type: 'array',
+            description: 'Ordered list of agents to activate in sequence.',
+            items: {
+              type: 'object',
+              properties: {
+                targetAgent: {
+                  type: 'string',
+                  enum: ['business_agent', 'design_agent', 'launch_agent', 'finance_agent'],
+                  description: 'Which agent to activate at this step.',
+                },
+                context: {
+                  type: 'string',
+                  description: 'Instructions or context for this agent (e.g. "Help user find a niche for a sustainable fashion brand").',
+                },
+              },
+              required: ['targetAgent', 'context'],
+            },
+          },
+          userMessage: {
+            type: 'string',
+            description: 'The original user message that triggered this pipeline.',
+          },
+        },
+        required: ['agents', 'userMessage'],
       },
     },
   },

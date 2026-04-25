@@ -4,6 +4,8 @@ import { handleInterAgentSignal } from './handlers/interAgentSignal';
 import { handleProductLaunchPublish } from './handlers/productLaunchPublish';
 import { handleDesignToLaunch } from './handlers/designToLaunch';
 import { handleFinanceSignal } from './handlers/financeSignal';
+import { handleBusinessAgent } from './handlers/businessAgent';
+import { handleDesignAgent } from './handlers/designAgent';
 import { getAllAgentStates } from '@/lib/agents/shared/agentStateManager';
 export type { AgentState } from '@/lib/types/agent';
 
@@ -15,13 +17,14 @@ const supabase = createClient(
 const UNIMPLEMENTED_AGENTS: Set<AgentName> = new Set([
   'product_agent',
   'customer_service_agent',
-  'design_agent',
 ]);
 
 const HANDLERS: Record<string, (row: WorkflowRow) => Promise<HandlerResult>> = {
   launch_agent: handleInterAgentSignal,
   product_agent: handleInterAgentSignal,
   finance_agent: handleFinanceSignal,
+  business_agent: handleBusinessAgent,
+  design_agent: handleDesignAgent,
   product_launch_publish: handleProductLaunchPublish,
   design_to_launch: handleDesignToLaunch,
   product_launched: handleFinanceSignal,
@@ -42,8 +45,6 @@ export async function runOrchestrator(): Promise<{
     .order('created_at', { ascending: true })
     .limit(20);
 
-  // Note: 'awaiting_approval' rows are excluded — only 'pending' rows are dispatched.
-
   if (error) {
     console.error('[Orchestrator] Failed to fetch pending workflows:', error.message);
     return { processed: 0, skipped: 0, failed: 0 };
@@ -58,6 +59,24 @@ export async function runOrchestrator(): Promise<{
   let failed = 0;
 
   for (const row of rows as WorkflowRow[]) {
+    // Check depends_on BEFORE claiming — skip if dependency not yet processed
+    if (row.depends_on) {
+      const { data: depRow } = await supabase
+        .from('workflows')
+        .select('state, result')
+        .eq('id', row.depends_on)
+        .single();
+
+      if (!depRow || depRow.state !== 'processed') {
+        skipped++;
+        console.log(`[Orchestrator] Row ${row.id} waiting on dependency ${row.depends_on} (state: ${depRow?.state ?? 'not found'})`);
+        continue;
+      }
+
+      // Inject dependency result so the handler can use it
+      row.payload = { ...row.payload, dependencyResult: depRow.result };
+    }
+
     // CAS-style claim: only update if still pending (prevents double-pickup)
     const { data: claimed } = await supabase
       .from('workflows')
@@ -96,9 +115,13 @@ export async function runOrchestrator(): Promise<{
       const result = await HANDLERS[handlerKey](row);
 
       if (result.status === 'completed') {
-        await transitionState(row.id, 'processed');
+        await transitionState(row.id, 'processed', undefined, result.data);
         processed++;
         console.log(`[Orchestrator] Completed row ${row.id} (${row.type}).`);
+      } else if (result.status === 'waiting') {
+        // Handler already set state (e.g. awaiting_approval) — don't override
+        skipped++;
+        console.log(`[Orchestrator] Row ${row.id} is waiting for user interaction.`);
       } else if (result.status === 'skipped') {
         await transitionState(row.id, 'processed', result.reason);
         skipped++;
@@ -124,9 +147,15 @@ export async function getAgentStates(businessId: string) {
   return getAllAgentStates(businessId);
 }
 
-async function transitionState(id: string, state: WorkflowState, errorMessage?: string) {
+async function transitionState(
+  id: string,
+  state: WorkflowState,
+  errorMessage?: string,
+  result?: Record<string, unknown>,
+) {
   const update: Record<string, unknown> = { state };
   if (errorMessage) update.error_message = errorMessage;
+  if (result) update.result = result;
   if (state === 'processed' || state === 'failed') {
     update.processed_at = new Date().toISOString();
   }
