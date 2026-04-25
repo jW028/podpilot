@@ -9,7 +9,10 @@ function getServiceClient() {
   );
 }
 
-async function trackActivity(businessId: string, action: string): Promise<string | null> {
+async function trackActivity(
+  businessId: string,
+  action: string,
+): Promise<string | null> {
   try {
     const { data } = await getServiceClient()
       .from("workflows")
@@ -24,7 +27,9 @@ async function trackActivity(businessId: string, action: string): Promise<string
       .select("id")
       .single();
     return data?.id ?? null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function completeActivity(id: string | null) {
@@ -34,7 +39,11 @@ async function completeActivity(id: string | null) {
       .from("workflows")
       .update({ state: "processed", processed_at: new Date().toISOString() })
       .eq("id", id);
-    if (error) console.error("[Design Agent] Failed to complete activity row:", error.message);
+    if (error)
+      console.error(
+        "[Design Agent] Failed to complete activity row:",
+        error.message,
+      );
   } catch (e) {
     console.error("[Design Agent] completeActivity threw:", e);
   }
@@ -141,10 +150,7 @@ async function fetchMarketTrends(
       const top = (payload.results || []).slice(0, 3);
       results +=
         top
-          .map(
-            (r) =>
-              `• ${r.title}: ${r.content?.substring(0, 200)}`,
-          )
+          .map((r) => `• ${r.title}: ${r.content?.substring(0, 200)}`)
           .join("\n") + "\n";
     } catch (error) {
       console.error(`Tavily search failed for "${q}":`, error);
@@ -248,6 +254,24 @@ async function fetchBrandProfile(businessId: string) {
   return data;
 }
 
+async function fetchBrandProfileFromWorkflow(businessId: string) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseServiceRole) return null;
+  const supabase = createClient(supabaseUrl, supabaseServiceRole);
+  const { data } = await supabase
+    .from("workflows")
+    .select("payload")
+    .eq("business_id", businessId)
+    .eq("type", "business_creation")
+    .eq("state", "processed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  return data?.payload?.brandProfile || null;
+}
+
 export async function POST(
   request: Request,
   {
@@ -288,7 +312,11 @@ export async function POST(
 
     // Handle finalize action: extract launch-ready payload from confirmed field suggestions
     if (body.action === "finalize" && body.finalizePayload) {
-      const { blueprintId, fieldSuggestions, categories = [] } = body.finalizePayload;
+      const {
+        blueprintId,
+        fieldSuggestions,
+        categories = [],
+      } = body.finalizePayload;
 
       const prices: Record<string, number> = {};
       let description = body.productContext?.description ?? "";
@@ -301,13 +329,22 @@ export async function POST(
         if (f.fieldName.startsWith("price_") && typeof f.value === "number") {
           const key = f.fieldName.replace("price_", "");
           prices[key] = f.value;
-        } else if (f.fieldName === "pricing_reasoning" && typeof f.value === "string") {
+        } else if (
+          f.fieldName === "pricing_reasoning" &&
+          typeof f.value === "string"
+        ) {
           pricingReasoning = f.value;
-        } else if (f.fieldName === "description" && typeof f.value === "string") {
+        } else if (
+          f.fieldName === "description" &&
+          typeof f.value === "string"
+        ) {
           description = f.value;
         } else if (f.fieldName === "tags" && Array.isArray(f.value)) {
           tags.push(...(f.value as string[]));
-        } else if (f.fieldName === "print_provider_id" && typeof f.value === "number") {
+        } else if (
+          f.fieldName === "print_provider_id" &&
+          typeof f.value === "number"
+        ) {
           printProviderId = f.value;
         } else if (f.fieldName === "variant_ids" && Array.isArray(f.value)) {
           variantIds.push(...(f.value as unknown as number[]));
@@ -328,7 +365,10 @@ export async function POST(
 
       return NextResponse.json({
         success: true,
-        data: { reply: "Product design finalized and ready to launch.", launchPayload },
+        data: {
+          reply: "Product design finalized and ready to launch.",
+          launchPayload,
+        },
         message: "Design finalized.",
       });
     }
@@ -345,14 +385,14 @@ export async function POST(
     }
 
     const apiKey = process.env.GLM_API_KEY;
-    const model = process.env.GLM_MODEL || "ilmu-glm-5.1";
-    const baseUrl = process.env.ILMU_BASE_URL || "https://api.ilmu.ai/v1";
+    const model = process.env.GLM_MODEL;
+    const baseUrl = process.env.ILMU_BASE_URL;
     const geminiApiKey = process.env.GEMINI_API_KEY;
-    const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const geminiModel = process.env.GEMINI_MODEL;
 
-    if (!geminiApiKey) {
+    if (!apiKey || !model || !baseUrl || !geminiApiKey || !geminiModel) {
       return NextResponse.json(
-        { success: false, message: "Missing GEMINI API configuration." },
+        { success: false, message: "Missing API configuration." },
         { status: 500 },
       );
     }
@@ -366,34 +406,58 @@ export async function POST(
 
     const activityId = await trackActivity(businessId, body.action ?? "chat");
     try {
+      // Fetch brand profile for richer context
+      const brandProfile = await fetchBrandProfile(businessId);
 
-    // Fetch brand profile for richer context
-    const brandProfile = await fetchBrandProfile(businessId);
+      const brandProfileFromWorkflow =
+        await fetchBrandProfileFromWorkflow(businessId);
 
-    // Fetch market trends via web scraping
-    const lastUserMessage =
-      body.messages.filter((m) => m.role === "user").pop()?.content || userIdea;
-    const trendQuery = lastUserMessage || businessNiche;
-    const marketTrends = await fetchMarketTrends(trendQuery, businessNiche);
+      // Fetch market trends via web scraping
+      const lastUserMessage =
+        body.messages.filter((m) => m.role === "user").pop()?.content ||
+        userIdea;
+      const trendQuery = lastUserMessage || businessNiche;
+      const marketTrends = await fetchMarketTrends(trendQuery, businessNiche);
 
-    // Search Printify catalog for relevant blueprints
-    const blueprintSuggestions = await searchPrintifyBlueprints(
-      lastUserMessage || businessNiche,
-    );
+      // Search Printify catalog for relevant blueprints
+      const blueprintSuggestions = await searchPrintifyBlueprints(
+        lastUserMessage || businessNiche,
+      );
 
-    // Build brand context string
-    let brandContext = "";
-    if (brandProfile) {
-      brandContext = `
+      // Build brand context string
+      let brandContext = "";
+      if (brandProfile) {
+        brandContext = `
 Brand Profile:
 - Brand Name: ${brandProfile.brand_name || businessName}
 - Tagline: ${brandProfile.tagline || "N/A"}
 - Brand Voice: ${brandProfile.brand_voice || "N/A"}
 - Target Audience: ${brandProfile.target_audience || "N/A"}
 - Color Palette: ${brandProfile.color_palette ? JSON.stringify(brandProfile.color_palette) : "N/A"}`;
-    }
+      }
 
-    const systemPrompt = `You are Design Agent for a POD (Print-on-Demand) application called Podpilot.
+      if (brandProfileFromWorkflow) {
+        brandContext += `Additional Brand Profile from Workflow:
+- Vibe: ${brandProfileFromWorkflow.vibe || "N/A"}
+- Purpose: ${brandProfileFromWorkflow.purpose || "N/A"}
+- Confidence: ${brandProfileFromWorkflow.confidence || "N/A"}
+- Business Name: ${brandProfileFromWorkflow.businessName || "N/A"}
+- Target Audience: ${brandProfileFromWorkflow.targetAudience || "N/A"}
+- Product Direction: ${brandProfileFromWorkflow.productDirection || "N/A"}
+- Niche: ${brandProfileFromWorkflow.niche || "N/A"}
+- Risks: ${brandProfileFromWorkflow.risks ? brandProfileFromWorkflow.risks.join("; ") : "N/A"}
+- Theme: ${brandProfileFromWorkflow.theme || "N/A"}
+- Brand Voice: ${brandProfileFromWorkflow.brandVoice || "N/A"}
+- Next 30 Days Plan: ${brandProfileFromWorkflow.next30Days ? brandProfileFromWorkflow.next30Days.join("; ") : "N/A"}
+- Product Lane: ${brandProfileFromWorkflow.productLane || "N/A"}
+- Vibe Keywords: ${brandProfileFromWorkflow.vibeKeywords ? brandProfileFromWorkflow.vibeKeywords.join(", ") : "N/A"}
+- Target Audience: ${brandProfileFromWorkflow.targetAudience || "N/A"}
+- Value Proposition: ${brandProfileFromWorkflow.valueProposition || "N/A"}
+- Malaysia Trend Note: ${brandProfileFromWorkflow.malaysiaTrendNote || "N/A"}
+      `;
+      }
+
+      const systemPrompt = `You are Design Agent for a POD (Print-on-Demand) application called Podpilot.
 
 Business Context:
 - Business: ${businessName}
@@ -453,132 +517,138 @@ Return STRICT JSON with this exact shape:
 
 Be conversational and concise. When the user first describes their idea, reference the market trends and brand identity to provide informed suggestions. Always suggest 3 Printify product types from the available list when the user describes a product idea.`;
 
-    const messagesForModel = [
-      { role: "system", content: systemPrompt },
-      ...body.messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-      })),
-    ];
+      const messagesForModel = [
+        { role: "system", content: systemPrompt },
+        ...body.messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+      ];
 
-    let response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${geminiApiKey}`,
-          "Content-Type": "application/json",
+      let response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${geminiApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: geminiModel,
+            temperature: 0.7,
+            response_format: { type: "json_object" },
+            messages: messagesForModel,
+          }),
         },
-        body: JSON.stringify({
-          model: geminiModel,
-          temperature: 0.7,
-          response_format: { type: "json_object" },
-          messages: messagesForModel,
-        }),
-      },
-    );
-
-    let content: string | undefined;
-
-    if (response.ok) {
-      const completion = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      content = completion.choices?.[0]?.message?.content;
-    } else {
-      console.warn(
-        `[design/route] Gemini returned non-ok status: ${response.status} ${response.statusText}`,
       );
-    }
 
-    if (!response.ok || !content) {
-      console.warn("[design/route] Gemini failed or returned empty. Attempting transparent GLM fallback...");
-      if (apiKey) {
-        response = await fetch(
-          `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model,
-              temperature: 0.7,
-              messages: messagesForModel,
-            }),
-          }
+      let content: string | undefined;
+
+      if (response.ok) {
+        const completion = (await response.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        content = completion.choices?.[0]?.message?.content;
+      } else {
+        console.warn(
+          `[design/route] Gemini returned non-ok status: ${response.status} ${response.statusText}`,
         );
-        if (response.ok) {
-          const completion = (await response.json()) as {
-            choices?: Array<{ message?: { content?: string } }>;
-          };
-          content = completion.choices?.[0]?.message?.content;
-          console.log("[design/route] Successfully recovered using GLM fallback.");
-        } else {
-          console.error(`[design/route] GLM fallback failed: ${response.status} ${response.statusText}`);
+      }
+
+      if (!response.ok || !content) {
+        console.warn(
+          "[design/route] Gemini failed or returned empty. Attempting transparent GLM fallback...",
+        );
+        if (apiKey) {
+          response = await fetch(
+            `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model,
+                temperature: 0.7,
+                messages: messagesForModel,
+              }),
+            },
+          );
+          if (response.ok) {
+            const completion = (await response.json()) as {
+              choices?: Array<{ message?: { content?: string } }>;
+            };
+            content = completion.choices?.[0]?.message?.content;
+            console.log(
+              "[design/route] Successfully recovered using GLM fallback.",
+            );
+          } else {
+            console.error(
+              `[design/route] GLM fallback failed: ${response.status} ${response.statusText}`,
+            );
+          }
         }
       }
-    }
 
-    if (!content) {
-      return NextResponse.json(
-        {
-          success: true,
-          data: {
-            ...fallbackPayload,
-            blueprintSuggestions:
-              blueprintSuggestions.length > 0
-                ? blueprintSuggestions
-                : undefined,
+      if (!content) {
+        return NextResponse.json(
+          {
+            success: true,
+            data: {
+              ...fallbackPayload,
+              blueprintSuggestions:
+                blueprintSuggestions.length > 0
+                  ? blueprintSuggestions
+                  : undefined,
+            },
+            message: "Model returned empty response.",
           },
-          message: "Model returned empty response.",
-        },
-        { status: 200 },
-      );
-    }
+          { status: 200 },
+        );
+      }
 
-    const parsed = parseModelJson(content) as {
-      reply?: unknown;
-      blueprintSuggestions?: unknown;
-      fieldSuggestions?: unknown;
-      marketTrends?: unknown;
-    } | null;
+      const parsed = parseModelJson(content) as {
+        reply?: unknown;
+        blueprintSuggestions?: unknown;
+        fieldSuggestions?: unknown;
+        marketTrends?: unknown;
+      } | null;
 
-    if (!parsed || typeof parsed.reply !== "string") {
+      if (!parsed || typeof parsed.reply !== "string") {
+        const payload: ChatResponsePayload = {
+          reply: content,
+          blueprintSuggestions:
+            blueprintSuggestions.length > 0 ? blueprintSuggestions : undefined,
+        };
+        return NextResponse.json({
+          success: true,
+          data: payload,
+          message: "Design guidance provided.",
+        });
+      }
+
       const payload: ChatResponsePayload = {
-        reply: content,
-        blueprintSuggestions:
-          blueprintSuggestions.length > 0 ? blueprintSuggestions : undefined,
+        reply: parsed.reply,
+        blueprintSuggestions: Array.isArray(parsed.blueprintSuggestions)
+          ? (parsed.blueprintSuggestions as BlueprintSuggestion[])
+          : blueprintSuggestions.length > 0
+            ? blueprintSuggestions
+            : undefined,
+        fieldSuggestions: Array.isArray(parsed.fieldSuggestions)
+          ? (parsed.fieldSuggestions as FieldSuggestion[])
+          : undefined,
+        marketTrends:
+          typeof parsed.marketTrends === "string"
+            ? parsed.marketTrends
+            : undefined,
       };
+
       return NextResponse.json({
         success: true,
         data: payload,
-        message: "Design guidance provided.",
+        message: "Design guidance provided successfully.",
       });
-    }
-
-    const payload: ChatResponsePayload = {
-      reply: parsed.reply,
-      blueprintSuggestions: Array.isArray(parsed.blueprintSuggestions)
-        ? (parsed.blueprintSuggestions as BlueprintSuggestion[])
-        : blueprintSuggestions.length > 0
-          ? blueprintSuggestions
-          : undefined,
-      fieldSuggestions: Array.isArray(parsed.fieldSuggestions)
-        ? (parsed.fieldSuggestions as FieldSuggestion[])
-        : undefined,
-      marketTrends:
-        typeof parsed.marketTrends === "string"
-          ? parsed.marketTrends
-          : undefined,
-    };
-
-    return NextResponse.json({
-      success: true,
-      data: payload,
-      message: "Design guidance provided successfully.",
-    });
     } finally {
       await completeActivity(activityId);
     }

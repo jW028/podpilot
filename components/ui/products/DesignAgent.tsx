@@ -9,19 +9,23 @@ import { FiLoader } from "react-icons/fi";
 import type { DesignToLaunchPayload } from "@/lib/types";
 
 const CATEGORY_KW: [string, string[]][] = [
-  ["hoodie",     ["hoodie", "sweatshirt", "pullover", "zip-up", "zip up"]],
-  ["tshirt",     ["t-shirt", "tshirt", "tee", "crew neck"]],
+  ["hoodie", ["hoodie", "sweatshirt", "pullover", "zip-up", "zip up"]],
+  ["tshirt", ["t-shirt", "tshirt", "tee", "crew neck"]],
   ["longsleeve", ["long sleeve", "longsleeve", "long-sleeve"]],
-  ["mug",        ["mug", "cup", "tumbler"]],
-  ["poster",     ["poster", "print", "canvas", "wall art"]],
-  ["hat",        ["hat", "cap", "beanie"]],
-  ["bag",        ["bag", "tote", "backpack"]],
+  ["mug", ["mug", "cup", "tumbler"]],
+  ["poster", ["poster", "print", "canvas", "wall art"]],
+  ["hat", ["hat", "cap", "beanie"]],
+  ["bag", ["bag", "tote", "backpack"]],
 ];
 
 function inferCategories(text: string): string[] {
   const lower = (text ?? "").toLowerCase();
-  const matched = CATEGORY_KW.filter(([, kws]) => kws.some((kw) => lower.includes(kw))).map(([cat]) => cat);
-  return matched.length > 0 ? matched : [lower.replace(/[^a-z0-9]+/g, "_").slice(0, 30) || "product"];
+  const matched = CATEGORY_KW.filter(([, kws]) =>
+    kws.some((kw) => lower.includes(kw)),
+  ).map(([cat]) => cat);
+  return matched.length > 0
+    ? matched
+    : [lower.replace(/[^a-z0-9]+/g, "_").slice(0, 30) || "product"];
 }
 
 interface ChatMessage {
@@ -83,8 +87,13 @@ const DesignAgent = ({
   const [isMounted, setIsMounted] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
-  const [launchStatus, setLaunchStatus] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [accumulatedSuggestions, setAccumulatedSuggestions] = useState<FieldSuggestion[]>([]);
+  const [launchStatus, setLaunchStatus] = useState<{
+    ok: boolean;
+    msg: string;
+  } | null>(null);
+  const [accumulatedSuggestions, setAccumulatedSuggestions] = useState<
+    FieldSuggestion[]
+  >([]);
   const [blueprintSuggestions, setBlueprintSuggestions] = useState<
     BlueprintSuggestion[]
   >([]);
@@ -106,7 +115,7 @@ const DesignAgent = ({
   useEffect(() => {
     const key = STORAGE_KEY(businessId, productId);
     const storedMessages = localStorage.getItem(key);
-    
+
     const timer = setTimeout(() => {
       if (storedMessages) {
         try {
@@ -141,9 +150,7 @@ const DesignAgent = ({
 
     try {
       setIsLoading(true);
-      const response = await fetch(
-        `/api/printify/blueprints/${blueprint.id}`,
-      );
+      const response = await fetch(`/api/printify/blueprints/${blueprint.id}`);
       const data = (await response.json()) as {
         success: boolean;
         attributes?: Record<string, unknown>;
@@ -301,7 +308,9 @@ const DesignAgent = ({
     }
   };
 
-  const hasPrices = accumulatedSuggestions.some((f) => f.fieldName.startsWith("price_") && typeof f.value === "number");
+  const hasPrices = accumulatedSuggestions.some(
+    (f) => f.fieldName.startsWith("price_") && typeof f.value === "number",
+  );
 
   const handleLaunch = async () => {
     if (!selectedBlueprint || !onLaunch) return;
@@ -314,7 +323,10 @@ const DesignAgent = ({
         body: JSON.stringify({
           action: "finalize",
           messages,
-          productContext: { title: productTitle, description: productDescription },
+          productContext: {
+            title: productTitle,
+            description: productDescription,
+          },
           businessContext: { name: businessName, niche: businessNiche },
           finalizePayload: {
             blueprintId: parseInt(selectedBlueprint.id, 10),
@@ -324,13 +336,20 @@ const DesignAgent = ({
         }),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.message || "Finalize failed");
+      if (!res.ok || !json.success)
+        throw new Error(json.message || "Finalize failed");
       const launchPayload: DesignToLaunchPayload = json.data?.launchPayload;
       if (!launchPayload) throw new Error("No launch payload returned");
       await onLaunch(launchPayload);
-      setLaunchStatus({ ok: true, msg: "Launched! Check the launch panel for status." });
+      setLaunchStatus({
+        ok: true,
+        msg: "Launched! Check the launch panel for status.",
+      });
     } catch (err) {
-      setLaunchStatus({ ok: false, msg: err instanceof Error ? err.message : "Launch failed" });
+      setLaunchStatus({
+        ok: false,
+        msg: err instanceof Error ? err.message : "Launch failed",
+      });
     } finally {
       setIsLaunching(false);
     }
@@ -518,7 +537,9 @@ const DesignAgent = ({
       {isDraft && selectedBlueprint && (
         <div className="px-5 pb-5 pt-0 flex-shrink-0 space-y-2">
           {launchStatus && (
-            <p className={`text-[10px] text-center px-1 ${launchStatus.ok ? "text-primary-400" : "text-red-400"}`}>
+            <p
+              className={`text-[10px] text-center px-1 ${launchStatus.ok ? "text-primary-400" : "text-red-400"}`}
+            >
               {launchStatus.msg}
             </p>
           )}
@@ -529,9 +550,14 @@ const DesignAgent = ({
               disabled={isLaunching || isLoading}
             >
               {isLaunching ? (
-                <><FiLoader className="animate-spin text-sm" /> Launching…</>
+                <>
+                  <FiLoader className="animate-spin text-sm" /> Launching…
+                </>
               ) : (
-                <><IoSparkles className="text-sm" /> {hasPrices ? "Launch with Design Prices" : "Launch Product"}</>
+                <>
+                  <IoSparkles className="text-sm" />{" "}
+                  {hasPrices ? "Launch with Design Prices" : "Launch Product"}
+                </>
               )}
             </button>
           )}
