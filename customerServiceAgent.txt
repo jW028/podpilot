@@ -1,0 +1,12 @@
+1. send after refund/return is processed 
+// type: 'refund_processed'
+// source_agent: 'customer_service_agent'
+// target_agent: 'finance_agent'
+payload: {
+  order_id: string,
+  product_id: string,
+  product_title: string,
+  refund_amount: number,       // in RM
+  reason: string,              // e.g. "damaged", "wrong item", "customer request"
+  refunded_at: string          // ISO timestamp
+}

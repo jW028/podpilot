@@ -1,7 +1,12 @@
-import React from "react";
+"use client";
+
+import { useParams } from "next/navigation";
+import CustomerServicePage from "@/components/ui/support/CustomerServicePage";
 
 const BusinessSupport = () => {
-  return <div>Business Support</div>;
+  const params = useParams();
+  const businessId = params.businessId as string;
+  return <CustomerServicePage businessId={businessId} />;
 };
 
 export default BusinessSupport;
