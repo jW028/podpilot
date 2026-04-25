@@ -145,84 +145,80 @@ const ProductDetailPage = ({
     }
   }, [businessId, productId]);
 
-  const initializeBlocksFromProduct = useCallback(
-    (product: Product) => {
-      const newBlocks: Block[] = [];
+  const initializeBlocksFromProduct = useCallback((product: Product) => {
+    const newBlocks: Block[] = [];
 
-      newBlocks.push({
-        id: "title",
-        name: "title",
-        type: "text",
-        label: "Product Title",
-        value: product.title || "",
-        placeholder: "Enter product title...",
-        required: true,
+    newBlocks.push({
+      id: "title",
+      name: "title",
+      type: "text",
+      label: "Product Title",
+      value: product.title || "",
+      placeholder: "Enter product title...",
+      required: true,
+    });
+
+    newBlocks.push({
+      id: "description",
+      name: "description",
+      type: "textarea",
+      label: "Description",
+      value: product.description || "",
+      placeholder: "Enter product description...",
+    });
+
+    newBlocks.push({
+      id: "price",
+      name: "price",
+      type: "number",
+      label: "Price ($)",
+      value: product.price ? product.price / 100 : 0,
+      placeholder: "Price in dollars (e.g. 24.99)",
+    });
+
+    newBlocks.push({
+      id: "product_image",
+      name: "product_image",
+      type: "image",
+      label: "Product Design",
+      value: "",
+      placeholder: "Upload your product design image",
+    });
+
+    if (product.attributes && typeof product.attributes === "object") {
+      Object.entries(product.attributes).forEach(([key, attr]) => {
+        if (attr && typeof attr === "object") {
+          const attributeData = attr as {
+            type?: string;
+            label?: string;
+            value?: unknown;
+            placeholder?: string;
+            options?: string[];
+            locked?: boolean;
+            required?: boolean;
+          };
+
+          const isLocked =
+            attributeData.locked === true || LOCKED_FIELDS.includes(key);
+
+          newBlocks.push({
+            id: `attr_${key}`,
+            name: key,
+            type: resolveFieldType(key, attributeData.type),
+            label: attributeData.label || key,
+            value:
+              (attributeData.value as string | number | string[] | null) || "",
+            placeholder: attributeData.placeholder,
+            options: attributeData.options,
+            locked: isLocked,
+            required: attributeData.required,
+          });
+        }
       });
+    }
 
-      newBlocks.push({
-        id: "description",
-        name: "description",
-        type: "textarea",
-        label: "Description",
-        value: product.description || "",
-        placeholder: "Enter product description...",
-      });
-
-      newBlocks.push({
-        id: "price",
-        name: "price",
-        type: "number",
-        label: "Price ($)",
-        value: product.price ? product.price / 100 : 0,
-        placeholder: "Price in dollars (e.g. 24.99)",
-      });
-
-      newBlocks.push({
-        id: "product_image",
-        name: "product_image",
-        type: "image",
-        label: "Product Design",
-        value: "",
-        placeholder: "Upload your product design image",
-      });
-
-      if (product.attributes && typeof product.attributes === "object") {
-        Object.entries(product.attributes).forEach(([key, attr]) => {
-          if (attr && typeof attr === "object") {
-            const attributeData = attr as {
-              type?: string;
-              label?: string;
-              value?: unknown;
-              placeholder?: string;
-              options?: string[];
-              locked?: boolean;
-              required?: boolean;
-            };
-
-            const isLocked =
-              attributeData.locked === true || LOCKED_FIELDS.includes(key);
-
-            newBlocks.push({
-              id: `attr_${key}`,
-              name: key,
-              type: resolveFieldType(key, attributeData.type),
-              label: attributeData.label || key,
-              value:
-                (attributeData.value as string | number | string[] | null) ||
-                "",
-              placeholder: attributeData.placeholder,
-              options: attributeData.options,
-              locked: isLocked,
-              required: attributeData.required,
-            });
-          }
-        });
-      }
-
-      setBlocks(newBlocks);
-    },
-    [],
-  );
+    setBlocks(newBlocks);
+  }, []);
 
   const initializeBlocksForCreation = useCallback(() => {
     setBlocks([
@@ -333,10 +329,6 @@ const ProductDetailPage = ({
 
   const handleBlockReorder = (reorderedBlocks: Block[]) => {
     setBlocks(reorderedBlocks);
-  };
-
-  const handleBlockAdd = (newBlock: Block) => {
-    setBlocks((prev) => [...prev, newBlock]);
   };
 
   const handleProductSelect = (blueprintId: string, productType: string) => {
@@ -510,7 +502,9 @@ const ProductDetailPage = ({
     await handleStatusChange("ready");
   };
 
-  const handleLaunchFromDesign = async (designPayload: DesignToLaunchPayload) => {
+  const handleLaunchFromDesign = async (
+    designPayload: DesignToLaunchPayload,
+  ) => {
     const payload = buildPayloadFromBlocks();
     await runLaunch({
       productData: {
