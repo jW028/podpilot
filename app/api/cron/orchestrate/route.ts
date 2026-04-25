@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runOrchestrator } from '@/lib/agents/orchestrator/orchestrator';
+import { runProactiveOrchestrator } from '@/lib/agents/orchestrator/proactiveOrchestrator';
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
@@ -10,8 +11,16 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await runOrchestrator();
-    return NextResponse.json(result, { status: 200 });
+    // 1. Process pending workflows (existing dispatcher)
+    const dispatchResult = await runOrchestrator();
+
+    // 2. Run proactive monitoring (check states, auto-trigger stale agents)
+    const proactiveResult = await runProactiveOrchestrator();
+
+    return NextResponse.json({
+      dispatch: dispatchResult,
+      proactive: proactiveResult,
+    }, { status: 200 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Internal Server Error';
     console.error('[Cron] Orchestrator fatal error:', message);

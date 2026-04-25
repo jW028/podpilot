@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { WorkflowRow, HandlerResult } from '@/lib/types/workflow';
+import { handleCriticalSignalEvent } from '@/lib/agents/orchestrator/eventHandler';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,7 +15,7 @@ export async function handleFinanceSignal(row: WorkflowRow): Promise<HandlerResu
     console.log(`[Finance] Product launched: "${product_title}" at ${listed_price} on ${marketplace}`);
 
     // Record a finance snapshot trigger so the finance agent can update metrics on next run
-    await supabase.from('workflows').insert({
+    const { data: inserted } = await supabase.from('workflows').insert({
       business_id: row.business_id,
       type: 'financial_analysis',
       source_agent: 'launch_agent',
@@ -28,7 +29,22 @@ export async function handleFinanceSignal(row: WorkflowRow): Promise<HandlerResu
         marketplace,
         launched_at,
       },
-    });
+    }).select('id').single();
+
+    // Flag CRITICAL signals for proactive orchestrator prioritization
+    if (inserted) {
+      const signalPriority = (payload as Record<string, unknown>)?.priority as string | undefined;
+      if (signalPriority === 'CRITICAL') {
+        await handleCriticalSignalEvent({
+          businessId: row.business_id,
+          signalType: row.type,
+          signalAction: (payload as Record<string, unknown>)?.action as string ?? 'unknown',
+          productTitle: (payload as Record<string, unknown>)?.product_title as string ?? 'unknown',
+          priority: signalPriority,
+          workflowId: inserted.id,
+        }).catch(e => console.error('[FinanceSignal] Failed to flag critical signal:', e));
+      }
+    }
 
     return {
       status: 'completed',

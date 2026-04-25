@@ -42,6 +42,8 @@ export async function runOrchestrator(): Promise<{
     .order('created_at', { ascending: true })
     .limit(20);
 
+  // Note: 'awaiting_approval' rows are excluded — only 'pending' rows are dispatched.
+
   if (error) {
     console.error('[Orchestrator] Failed to fetch pending workflows:', error.message);
     return { processed: 0, skipped: 0, failed: 0 };

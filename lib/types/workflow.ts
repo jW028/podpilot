@@ -1,4 +1,4 @@
-export type WorkflowState = 'pending' | 'processing' | 'processed' | 'failed';
+export type WorkflowState = 'pending' | 'awaiting_approval' | 'processing' | 'processed' | 'failed';
 
 export type WorkflowRow = {
   id: string;
