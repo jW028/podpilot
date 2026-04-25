@@ -19,6 +19,7 @@ type FilterStatus =
   | "draft"
   | "designing"
   | "ready"
+  | "pushed"
   | "published"
   | "retired";
 
@@ -93,6 +94,7 @@ const ProductsPageContent = ({
                 { label: "Draft", value: "draft" },
                 { label: "Designing", value: "designing" },
                 { label: "Ready", value: "ready" },
+                { label: "Pushed", value: "pushed" },
                 { label: "Published", value: "published" },
                 { label: "Retired", value: "retired" },
               ] as { label: string; value: FilterStatus }[]
@@ -174,8 +176,8 @@ const ProductsPageContent = ({
               <span className="text-[#C9A84C] font-semibold">
                 Underperforming:
               </span>{" "}
-              "Grid Phone Case" has low CTR. Suggest refreshing the title for
-              SEO.
+              &quot;Grid Phone Case&quot; has low CTR. Suggest refreshing the
+              title for SEO.
             </div>
 
             <div className="bg-[#2A2A27] border border-[#FAFAF8]/5 rounded-[10px] p-[14px] text-[13px] leading-relaxed relative overflow-hidden">

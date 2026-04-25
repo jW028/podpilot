@@ -170,6 +170,55 @@ export async function executeStartAgentPipeline(args: {
   return { success: true, pipelineIds };
 }
 
+// Creates multiple INDEPENDENT sequential pipelines that run concurrently.
+// Each pipeline is a chain (A→B→C with depends_on), but pipelines have no
+// dependency on each other — the orchestrator picks them all up in the same pass.
+export async function executeStartConcurrentPipelines(args: {
+  businessId: string;
+  pipelines: Array<Array<{ targetAgent: AgentName; context: string }>>;
+  userMessage: string;
+}): Promise<{ success: boolean; allPipelineIds: string[][]; error?: string }> {
+  const { businessId, pipelines, userMessage } = args;
+  const allPipelineIds: string[][] = [];
+
+  for (const pipeline of pipelines) {
+    const pipelineIds: string[] = [];
+    let previousId: string | null = null;
+
+    for (const step of pipeline) {
+      const res = await supabase
+        .from('workflows')
+        .insert({
+          business_id: businessId,
+          type: 'agent_pipeline_task',
+          source_agent: 'orchestrator',
+          target_agent: step.targetAgent,
+          state: 'pending',
+          depends_on: previousId,
+          payload: {
+            context: step.context,
+            userMessage,
+            pipelineStep: pipelineIds.length,
+          },
+        })
+        .select('id')
+        .single();
+
+      const data = res.data as { id: string } | null;
+      if (res.error || !data) {
+        return { success: false, allPipelineIds, error: res.error?.message ?? 'Insert failed' };
+      }
+
+      pipelineIds.push(data.id);
+      previousId = data.id;
+    }
+
+    allPipelineIds.push(pipelineIds);
+  }
+
+  return { success: true, allPipelineIds };
+}
+
 export async function executeGetReadyProducts(businessId: string): Promise<Array<{ id: string; title: string; hasPrices: boolean }>> {
   const { data, error } = await supabase
     .from('products')
@@ -351,6 +400,46 @@ export const TOOL_DEFINITIONS = [
           },
         },
         required: ['agents', 'userMessage'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'startConcurrentPipelines',
+      description:
+        'Start multiple INDEPENDENT product pipelines that run concurrently. Use this when the user wants to create, design, or launch more than one product at the same time. Each pipeline is a sequential chain (e.g. [design_agent → launch_agent]) but pipelines run in parallel with each other. This enables pipeline overlap: while launch_agent handles product A, design_agent is already working on product B.',
+      strict: false,
+      parameters: {
+        type: 'object',
+        properties: {
+          pipelines: {
+            type: 'array',
+            description: 'One entry per product/task. Each entry is an ordered list of agent steps for that product.',
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  targetAgent: {
+                    type: 'string',
+                    enum: ['business_agent', 'design_agent', 'launch_agent', 'finance_agent'],
+                  },
+                  context: {
+                    type: 'string',
+                    description: 'Instructions for this agent step (include the product idea/details).',
+                  },
+                },
+                required: ['targetAgent', 'context'],
+              },
+            },
+          },
+          userMessage: {
+            type: 'string',
+            description: 'The original user message that triggered the concurrent operation.',
+          },
+        },
+        required: ['pipelines', 'userMessage'],
       },
     },
   },

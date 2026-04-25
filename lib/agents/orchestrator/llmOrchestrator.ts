@@ -10,6 +10,7 @@ import {
   executeGetReadyProducts,
   executeGetMarketResearch,
   executeStartAgentPipeline,
+  executeStartConcurrentPipelines,
 } from './tools';
 import { runOrchestrator } from './orchestrator';
 import type { AgentName } from '@/lib/types/workflow';
@@ -50,7 +51,6 @@ export async function executeTool(
           type: args.type as string,
           payload: args.payload as Record<string, unknown> | undefined,
         });
-        runOrchestrator().catch(e => console.error('[LLM Orchestrator] Background orchestrator trigger failed:', e));
         return result;
       }
       case 'getFinanceSnapshot': {
@@ -74,13 +74,18 @@ export async function executeTool(
         return await executeGetMarketResearch(args.query as string);
       }
       case 'startAgentPipeline': {
-        const result = await executeStartAgentPipeline({
+        return await executeStartAgentPipeline({
           businessId,
           agents: args.agents as Array<{ targetAgent: import('@/lib/types/workflow').AgentName; context: string }>,
           userMessage: args.userMessage as string,
         });
-        runOrchestrator().catch(e => console.error('[LLM Orchestrator] Pipeline trigger failed:', e));
-        return result;
+      }
+      case 'startConcurrentPipelines': {
+        return await executeStartConcurrentPipelines({
+          businessId,
+          pipelines: args.pipelines as Array<Array<{ targetAgent: import('@/lib/types/workflow').AgentName; context: string }>>,
+          userMessage: args.userMessage as string,
+        });
       }
       default:
         return { error: `Unknown tool: ${name}` };
@@ -97,9 +102,11 @@ export async function executeTool(
 export async function runLlmOrchestrator({
   businessId,
   message,
+  businessReady = true,
 }: {
   businessId: string;
   message: string;
+  businessReady?: boolean;
 }): Promise<{ reply: string }> {
   const glm = getGlmClient();
 
@@ -111,18 +118,20 @@ export async function runLlmOrchestrator({
 
   const businessName = business?.name ?? 'your business';
 
-  const systemPrompt = `You are the Orchestrator for "${businessName}", an AI-operated print-on-demand business on Podilot.
+  const systemPrompt = businessReady
+    ? `You are the Orchestrator for "${businessName}", an AI-operated print-on-demand business on Podilot.
 
 You coordinate specialized agents by using the tools provided. You do NOT answer from your own knowledge — always use tools to get real data.
 
 AGENTS YOU CAN COORDINATE:
 - business_agent: Guides the user through clarifying their business idea, niche, and brand direction via the onboarding chat
-- design_agent: Creates a product design based on business context (interactive — user approves on the Design page)
+- design_agent: Autonomously generates a product concept (title, description, category) and creates a draft product record
 - launch_agent: Creates products on Printify and publishes them to sales channels (autonomous)
 - finance_agent: Analyzes profit margins, detects anomalies, reprices or retires underperforming products
 
 AVAILABLE TOOLS:
-- startAgentPipeline: Activate multiple agents in sequence. Each agent waits for the previous to finish. Use for multi-step requests like "help me start a business and design a product".
+- startAgentPipeline: Activate multiple agents in sequence for a SINGLE product/task. Each agent waits for the previous to finish.
+- startConcurrentPipelines: Activate multiple INDEPENDENT pipelines for MULTIPLE products/tasks simultaneously. Each pipeline is sequential internally but all pipelines run in parallel. Use when the user wants to work on 2+ products at the same time.
 - invokeAgent: Queue a single task for one agent. Use for targeted single-agent requests.
 - getAgentStates: Check which agents are idle, running, or in error state.
 - getFinanceSnapshot: Get the latest cached financial metrics. Use for quick financial questions.
@@ -132,14 +141,23 @@ AVAILABLE TOOLS:
 - logDecision: Log a notable decision to the activity log.
 
 DECISION GUIDELINES:
-- "I don't have a business idea" / "help me start a business" / "I want to design and launch a product from scratch": use startAgentPipeline with [business_agent, design_agent, launch_agent]
-- "I have an idea, help me design a product": use startAgentPipeline with [business_agent, design_agent]
+- Single product from scratch: use startAgentPipeline with [design_agent, launch_agent]
+- Multiple products at once (e.g. "create two products", "design and launch A and B"): use startConcurrentPipelines — one pipeline per product, each with [design_agent, launch_agent]
 - Financial questions: call getFinanceSnapshot first. If stale (>7 days), invokeAgent finance_agent with type "financial_analysis".
 - Product launch requests (product already designed): invokeAgent launch_agent with type "product_launch_publish".
 - Market research: call getMarketResearch directly — do NOT invoke an agent.
-- "Design a product" when business already exists: tell the user to use the Design tab — do NOT invoke any agent.
 - If unsure what the user wants, ask a clarifying question — do NOT guess.
-- Always be concise. Keep responses under 150 words.`;
+- Always be concise. Keep responses under 150 words.`
+    : `You are the Orchestrator for a new business on Podilot that has not yet completed its setup.
+
+CRITICAL CONSTRAINT: The business setup (onboarding) is NOT complete. You MUST NOT invoke any agents or take any actions other than redirecting the user to complete onboarding.
+
+For EVERY message the user sends, regardless of content, respond with a short, friendly message explaining:
+1. Their business setup is not complete yet
+2. They need to go to the Onboarding page to define their business idea, niche, and brand strategy
+3. Once onboarding is complete, all agents will be unlocked
+
+Do NOT call any tools. Do NOT discuss business operations, products, or marketing. Keep responses under 60 words.`;
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },

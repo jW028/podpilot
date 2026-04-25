@@ -106,6 +106,9 @@ const DesignAgent = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const isDraft = productStatus === "draft";
+  const isInputDisabled = ["ready", "pushed", "published", "retired"].includes(
+    productStatus!,
+  );
 
   const initializeMessages = useCallback(() => {
     const msg = isDraft
@@ -183,100 +186,111 @@ const DesignAgent = ({
     }
   };
 
-  const sendMessage = useCallback(async (text: string, msgSnapshot: ChatMessage[]) => {
-    const userMessage: ChatMessage = { role: "user", content: text };
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
+  const sendMessage = useCallback(
+    async (text: string, msgSnapshot: ChatMessage[]) => {
+      const userMessage: ChatMessage = { role: "user", content: text };
+      setMessages((prev) => [...prev, userMessage]);
+      setIsLoading(true);
 
-    try {
-      const response = await fetch(
-        `/api/business/${businessId}/products/design`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: [...msgSnapshot, userMessage],
-            businessContext: { name: businessName, niche: businessNiche },
-            productContext: {
-              title: productTitle,
-              description: productDescription,
-            },
-            userIdea: text,
-          }),
-        },
-      );
+      try {
+        const response = await fetch(
+          `/api/business/${businessId}/products/design`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messages: [...msgSnapshot, userMessage],
+              businessContext: { name: businessName, niche: businessNiche },
+              productContext: {
+                title: productTitle,
+                description: productDescription,
+              },
+              userIdea: text,
+            }),
+          },
+        );
 
-      if (!response.ok) {
-        throw new Error("Failed to get design guidance");
-      }
+        if (!response.ok) {
+          throw new Error("Failed to get design guidance");
+        }
 
-      const { data } = (await response.json()) as {
-        success: boolean;
-        data: {
-          reply: string;
-          blueprintSuggestions?: BlueprintSuggestion[];
-          fieldSuggestions?: FieldSuggestion[];
-          marketTrends?: string;
+        const { data } = (await response.json()) as {
+          success: boolean;
+          data: {
+            reply: string;
+            blueprintSuggestions?: BlueprintSuggestion[];
+            fieldSuggestions?: FieldSuggestion[];
+            marketTrends?: string;
+          };
         };
-      };
 
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.reply },
-      ]);
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: data.reply },
+        ]);
 
-      // Handle field suggestions from the agent
-      if (data.fieldSuggestions && data.fieldSuggestions.length > 0) {
-        data.fieldSuggestions.forEach((suggestion) => {
-          onFieldUpdate?.(suggestion.fieldName, {
-            type: suggestion.type,
-            label: suggestion.label || suggestion.fieldName,
-            value: suggestion.value,
-            options: suggestion.options,
-            placeholder: suggestion.placeholder,
-            locked: suggestion.locked || false,
+        // Handle field suggestions from the agent
+        if (data.fieldSuggestions && data.fieldSuggestions.length > 0) {
+          data.fieldSuggestions.forEach((suggestion) => {
+            onFieldUpdate?.(suggestion.fieldName, {
+              type: suggestion.type,
+              label: suggestion.label || suggestion.fieldName,
+              value: suggestion.value,
+              options: suggestion.options,
+              placeholder: suggestion.placeholder,
+              locked: suggestion.locked || false,
+            });
           });
-        });
-        // Accumulate for launch payload — later suggestions overwrite earlier ones per field
-        setAccumulatedSuggestions((prev) => {
-          const merged = [...prev];
-          data.fieldSuggestions!.forEach((f) => {
-            const idx = merged.findIndex((m) => m.fieldName === f.fieldName);
-            if (idx >= 0) merged[idx] = f;
-            else merged.push(f);
+          // Accumulate for launch payload — later suggestions overwrite earlier ones per field
+          setAccumulatedSuggestions((prev) => {
+            const merged = [...prev];
+            data.fieldSuggestions!.forEach((f) => {
+              const idx = merged.findIndex((m) => m.fieldName === f.fieldName);
+              if (idx >= 0) merged[idx] = f;
+              else merged.push(f);
+            });
+            return merged;
           });
-          return merged;
-        });
-      }
+        }
 
-      // Handle blueprint suggestions (3 real Printify product types)
-      if (
-        data.blueprintSuggestions &&
-        data.blueprintSuggestions.length > 0 &&
-        !selectedBlueprint
-      ) {
-        setBlueprintSuggestions(data.blueprintSuggestions);
-      }
+        // Handle blueprint suggestions (3 real Printify product types)
+        if (
+          data.blueprintSuggestions &&
+          data.blueprintSuggestions.length > 0 &&
+          !selectedBlueprint
+        ) {
+          setBlueprintSuggestions(data.blueprintSuggestions);
+        }
 
-      // Store market trends
-      if (data.marketTrends) {
-        setMarketTrends(data.marketTrends);
+        // Store market trends
+        if (data.marketTrends) {
+          setMarketTrends(data.marketTrends);
+        }
+      } catch (error) {
+        const errorMessage: ChatMessage = {
+          role: "assistant",
+          content:
+            "Sorry, I encountered an error. " +
+            (error instanceof Error ? error.message : "Please try again."),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      const errorMessage: ChatMessage = {
-        role: "assistant",
-        content:
-          "Sorry, I encountered an error. " +
-          (error instanceof Error ? error.message : "Please try again."),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [businessId, businessName, businessNiche, productTitle, productDescription, onFieldUpdate, selectedBlueprint]);
+    },
+    [
+      businessId,
+      businessName,
+      businessNiche,
+      productTitle,
+      productDescription,
+      onFieldUpdate,
+      selectedBlueprint,
+    ],
+  );
 
   const handleSendMessage = async () => {
-    if (!input.trim() || !isMounted) return;
+    if (!input.trim() || !isMounted || isInputDisabled) return;
     const text = input;
     setInput("");
     await sendMessage(text, messages);
@@ -288,7 +302,7 @@ const DesignAgent = ({
     if (!prompt || !isMounted || autoPromptFired.current) return;
     autoPromptFired.current = true;
     sendMessage(prompt, messages);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMounted]);
 
   const handleConfirm = async () => {
@@ -296,7 +310,7 @@ const DesignAgent = ({
     try {
       setIsConfirming(true);
       await onConfirm();
-    } catch (error) {
+    } catch {
       const msg: ChatMessage = {
         role: "assistant",
         content:
@@ -526,7 +540,7 @@ const DesignAgent = ({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !isLoading) {
+              if (e.key === "Enter" && !isLoading && !isInputDisabled) {
                 handleSendMessage();
               }
             }}
@@ -536,12 +550,12 @@ const DesignAgent = ({
                 : "Ask for design help or describe what you want..."
             }
             className="flex-1 bg-transparent text-light placeholder-neutral-600 text-xs focus:outline-none disabled:opacity-50"
-            disabled={isLoading}
+            disabled={isLoading || isInputDisabled}
             autoFocus
           />
           <button
             onClick={handleSendMessage}
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || !input.trim() || isInputDisabled}
             className="p-1.5 rounded-lg bg-primary-500 text-dark hover:bg-primary-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
           >
             <RiSendPlaneFill className="text-sm" />

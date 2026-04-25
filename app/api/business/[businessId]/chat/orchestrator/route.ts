@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { runLlmOrchestrator } from '@/lib/agents/orchestrator/llmOrchestrator';
+import { runOrchestrator } from '@/lib/agents/orchestrator/orchestrator';
 
 export async function POST(
   request: Request,
@@ -30,14 +31,25 @@ export async function POST(
 
     const businessUuid = business.id;
 
+    // Check if business has completed onboarding (brand_profiles record exists)
+    const { data: brandProfile } = await supabase
+      .from('brand_profiles')
+      .select('business_id')
+      .eq('business_id', businessUuid)
+      .maybeSingle();
+
+    const businessReady = !!brandProfile;
+
     // Run the LLM-based orchestrator — it decides which tools to call
-    const { reply } = await runLlmOrchestrator({ businessId: businessUuid, message });
+    const { reply } = await runLlmOrchestrator({ businessId: businessUuid, message, businessReady });
 
-    // Detect design intent on the user message so the client can navigate
-    const designPattern = /\b(design|create|make|draw|generate)\b.{0,40}\b(shirt|hoodie|mug|poster|hat|tshirt|t-shirt|tee|bag|product|clothing|apparel)\b|\bdesign (a|an|me|for|my)\b/i;
-    const action = designPattern.test(message) ? 'navigate_design' : undefined;
+    // Process any pending workflows inserted by the LLM (design/launch pipelines).
+    // Awaited here so workflows reach 'processing' state before the client's refreshData fires.
+    // runOrchestrator only processes the fast initial steps (design_agent stub creation);
+    // the full launch agent runs as a follow-on inside the same pass.
+    await runOrchestrator().catch(e => console.error('[Chat API] Orchestrator error after LLM:', e));
 
-    return NextResponse.json({ reply, ...(action ? { action } : {}), businessName: business.name });
+    return NextResponse.json({ reply, businessReady, businessName: business.name });
   } catch (err: unknown) {
     console.error('[Chat API] Error:', err);
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';

@@ -6,6 +6,7 @@ import { handleDesignToLaunch } from './handlers/designToLaunch';
 import { handleFinanceSignal } from './handlers/financeSignal';
 import { handleBusinessAgent } from './handlers/businessAgent';
 import { handleDesignAgent } from './handlers/designAgent';
+import { handleLaunchAgentPipeline } from './handlers/launchAgentPipeline';
 import { getAllAgentStates } from '@/lib/agents/shared/agentStateManager';
 export type { AgentState } from '@/lib/types/agent';
 
@@ -20,6 +21,9 @@ const UNIMPLEMENTED_AGENTS: Set<AgentName> = new Set([
 ]);
 
 const HANDLERS: Record<string, (row: WorkflowRow) => Promise<HandlerResult>> = {
+  // Pipeline tasks (agent_pipeline_task type) use dedicated handlers
+  launch_agent_pipeline: handleLaunchAgentPipeline,
+  // Signal-based inter-agent tasks (reprice, retire, boost)
   launch_agent: handleInterAgentSignal,
   product_agent: handleInterAgentSignal,
   finance_agent: handleFinanceSignal,
@@ -96,7 +100,15 @@ export async function runOrchestrator(): Promise<{
     try {
       const targetAgent = row.target_agent as AgentName | null;
       const typeRoutedHandlers = ['product_launch_publish', 'design_to_launch', 'product_launched', 'price_updated'];
-      const handlerKey = typeRoutedHandlers.includes(row.type) ? row.type : targetAgent;
+
+      // Pipeline tasks targeting launch_agent use the dedicated pipeline handler
+      // (handleInterAgentSignal only handles signal-based tasks like reprice/retire)
+      let handlerKey: string | null;
+      if (row.type === 'agent_pipeline_task' && targetAgent === 'launch_agent') {
+        handlerKey = 'launch_agent_pipeline';
+      } else {
+        handlerKey = typeRoutedHandlers.includes(row.type) ? row.type : targetAgent;
+      }
 
       if (targetAgent && UNIMPLEMENTED_AGENTS.has(targetAgent)) {
         await transitionState(row.id, 'processed', `Agent "${targetAgent}" is not implemented yet`);

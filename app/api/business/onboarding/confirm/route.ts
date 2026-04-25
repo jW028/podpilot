@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { initAgentStates } from "@/lib/agents/shared/agentStateManager";
 
 interface OnboardingInput {
   businessName: string;
@@ -195,6 +196,9 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+
+    // Seed agent_states rows so the workflow page shows all agents as idle immediately
+    await initAgentStates(businessId);
 
     const { error: workflowError } = await serviceClient.from("workflows").insert({
       business_id: businessId,

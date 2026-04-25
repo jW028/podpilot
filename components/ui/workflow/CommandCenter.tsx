@@ -2,14 +2,18 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { Brain, Box, Rocket, LineChart, Briefcase, Send, AlertCircle, Clock, Check, RefreshCw, ExternalLink } from "lucide-react";
+import {
+  Brain, Box, Rocket, LineChart, Briefcase, Send,
+  AlertCircle, Clock, Check, RefreshCw, ExternalLink, Lock,
+} from "lucide-react";
 import type { WorkflowRow } from "@/lib/types/workflow";
 import type { AgentState } from "@/lib/types/agent";
 import MarkdownText from "@/components/ui/shared/MarkdownText";
 
 interface CommandCenterProps {
-  businessId: string; // Could be a UUID or a slug (e.g. 'moki')
+  businessId: string;
 }
 
 interface ChatMessage {
@@ -33,17 +37,17 @@ const AGENT_ROUTES: Record<string, string> = {
 };
 
 const WELCOME_MSG = "System online. Currently monitoring agent coordination for your store. How can I help you today?";
+const SETUP_REQUIRED_MSG = "Your business setup is not complete yet. Please complete the onboarding process first before I can activate any agents for you.";
 
 export default function CommandCenter({ businessId }: CommandCenterProps) {
   const supabase = createClient();
   const router = useRouter();
   const [realBusinessId, setRealBusinessId] = useState<string | null>(null);
+  const [businessReady, setBusinessReady] = useState<boolean | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
   const [agentStates, setAgentStates] = useState<AgentState[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "ai", text: WELCOME_MSG }
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -87,6 +91,22 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
       }
 
       setRealBusinessId(uuid);
+
+      // Check whether onboarding is complete (brand_profiles record exists)
+      const { data: brandProfile } = await supabase
+        .from("brand_profiles")
+        .select("business_id")
+        .eq("business_id", uuid)
+        .maybeSingle();
+
+      const ready = !!brandProfile;
+      setBusinessReady(ready);
+
+      // If ready, lazily seed any missing agent_states rows
+      if (ready) {
+        fetch(`/api/business/${uuid}/agent-states/init`, { method: "POST" }).catch(() => {});
+      }
+
       refreshData(uuid);
 
       // Restore chat history from localStorage
@@ -94,9 +114,15 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
         const saved = localStorage.getItem(`oc-chat-${uuid}`);
         if (saved) {
           const parsed = JSON.parse(saved) as ChatMessage[];
-          if (parsed.length > 0) setMessages(parsed);
+          if (parsed.length > 0) {
+            setMessages(parsed);
+            setHistoryLoaded(true);
+            return;
+          }
         }
       } catch {}
+
+      setMessages([{ role: "ai", text: ready ? WELCOME_MSG : SETUP_REQUIRED_MSG }]);
       setHistoryLoaded(true);
 
       const channelSuffix = `${uuid}-${Math.random().toString(36).slice(2)}`;
@@ -137,9 +163,28 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
         )
         .subscribe();
 
+      // Real-time: unlock the UI the moment onboarding completes in another tab
+      const brandProfileChannel = supabase
+        .channel(`brand-profile-${channelSuffix}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "brand_profiles", filter: `business_id=eq.${uuid}` },
+          () => {
+            setBusinessReady(true);
+            fetch(`/api/business/${uuid}/agent-states/init`, { method: "POST" }).catch(() => {});
+            setMessages((prev) => [
+              ...prev,
+              { role: "ai", text: "Business setup complete! All agents are now active. How can I help you today?" },
+            ]);
+            refreshData(uuid);
+          }
+        )
+        .subscribe();
+
       return () => {
         supabase.removeChannel(workflowsChannel);
         supabase.removeChannel(agentStatesChannel);
+        supabase.removeChannel(brandProfileChannel);
       };
     };
 
@@ -150,7 +195,6 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  // Persist chat history to localStorage whenever messages change
   useEffect(() => {
     if (!realBusinessId || !historyLoaded) return;
     try {
@@ -177,9 +221,7 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
         setMessages((prev) => [...prev, { role: "ai", text: `Error: ${data.error}` }]);
       } else if (data.reply) {
         setMessages((prev) => [...prev, { role: "ai", text: data.reply }]);
-        if (data.action === 'navigate_design') {
-          setTimeout(() => router.push(`/business/${businessId}/products?designPrompt=${encodeURIComponent(userMsg)}`), 1200);
-        }
+        if (typeof data.businessReady === "boolean") setBusinessReady(data.businessReady);
       }
     } catch {
       setMessages((prev) => [...prev, { role: "ai", text: "Network error. Please check your connection." }]);
@@ -189,7 +231,7 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
     }
   };
 
-  const TWO_MINUTES_AGO = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const [TWO_MINUTES_AGO] = useState(() => new Date(Date.now() - 2 * 60 * 1000).toISOString());
   const activeWorkflows = workflows.filter((w) => {
     if (w.state !== "pending" && w.state !== "processing" && w.state !== "awaiting_approval") return false;
     if (w.type === "agent_active" && w.created_at < TWO_MINUTES_AGO) return false;
@@ -199,6 +241,9 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
     (w) => (w.state === "processed" || w.state === "failed") && w.type !== "agent_active",
   );
   const awaitingApproval = workflows.filter((w) => w.state === "awaiting_approval");
+  const currentActives = activeWorkflows.filter((w) => w.state === "processing" || w.state === "pending");
+  const primaryActive = currentActives[0];
+  const runningAgentCount = agentStates.filter((s) => s.state === "running").length;
 
   const handleApprove = async (workflowId: string) => {
     try {
@@ -215,14 +260,21 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
       setMessages((prev) => [...prev, { role: "ai", text: "Failed to approve workflow." }]);
     }
   };
-  const currentActive = activeWorkflows[0];
 
-  const getAgentStatus = (agentId: string): "Running" | "Waiting" | "Idle" | "Error" => {
+  type AgentDisplayStatus = "Running" | "Waiting" | "Idle" | "Error" | "Setup Required" | "Locked";
+
+  const getAgentStatus = (agentId: string): AgentDisplayStatus => {
     if (agentId === "orchestrator") return "Running";
-    // Prefer self-reported state from agent_states table
+
+    // Phase 1: business setup not complete
+    if (businessReady === false) {
+      return agentId === "business_agent" ? "Setup Required" : "Locked";
+    }
+
     const agentState = agentStates.find((s) => s.agent_name === agentId);
     if (agentState) {
       if (agentState.state === "running") return "Running";
+      if (agentState.state === "waiting") return "Waiting";
       if (agentState.state === "error") return "Error";
       return "Idle";
     }
@@ -233,6 +285,9 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
   };
 
   const getAgentCurrentTask = (agentId: string): string | null => {
+    if (businessReady === false && agentId === "business_agent") {
+      return "Complete onboarding to activate";
+    }
     const agentState = agentStates.find((s) => s.agent_name === agentId);
     return agentState?.current_task ?? null;
   };
@@ -241,10 +296,33 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
     <div className="flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto h-[calc(100vh-120px)] min-h-[700px]">
       {/* LEFT PANEL: DAG & Logs */}
       <div className="flex-1 flex flex-col gap-6">
+        {/* Phase 1 banner */}
+        {businessReady === false && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
+            <AlertCircle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-800">Business setup required</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Complete the onboarding process to unlock all agents and start orchestrating your store.
+              </p>
+            </div>
+            <Link
+              href={`/business/${businessId}/onboarding`}
+              className="shrink-0 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors"
+            >
+              Go to Onboarding →
+            </Link>
+          </div>
+        )}
+
         <div className="bg-[#FAFAF8] border border-[#E8E7E2] rounded-xl p-8 flex-1 flex flex-col relative overflow-hidden bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px]">
           <div className="flex justify-between items-start mb-8">
             <div className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">
-              Active Workflow {currentActive ? `· ${currentActive.type.replace(/_/g, " ")}` : "· None"}
+              {runningAgentCount > 1
+                ? `${runningAgentCount} agents running concurrently`
+                : primaryActive
+                  ? `Active · ${primaryActive.type.replace(/_/g, " ")}`
+                  : "Active Workflow · None"}
             </div>
             <button
               onClick={() => refreshData()}
@@ -252,7 +330,7 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
               className="p-1 hover:bg-neutral-200 rounded-md transition-colors"
               title="Refresh status"
             >
-              <RefreshCw size={14} className={`text-neutral-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw size={14} className={`text-neutral-400 ${isRefreshing ? "animate-spin" : ""}`} />
             </button>
           </div>
 
@@ -263,6 +341,8 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
               const pendingApproval = awaitingApproval.find((wf) => wf.target_agent === agent.id);
               const isActive = status === "Running" || status === "Waiting";
               const isError = status === "Error";
+              const isSetupRequired = status === "Setup Required";
+              const isLocked = status === "Locked";
               const Icon = agent.icon;
 
               return (
@@ -271,16 +351,24 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                     className={`group w-80 rounded-xl p-4 border transition-all duration-300 ${
                       agent.id === "orchestrator"
                         ? "bg-[#141412] border-[#2A2A27] text-white shadow-lg"
-                        : isError
-                          ? "bg-white border-red-300 shadow-[0_0_10px_rgba(239,68,68,0.1)] cursor-pointer hover:shadow-md"
-                          : pendingApproval
-                            ? "bg-white border-blue-400 shadow-[0_0_15px_rgba(96,165,250,0.2)] scale-[1.02] cursor-pointer hover:shadow-md"
-                            : isActive
-                              ? "bg-white border-[#C9A84C] shadow-[0_0_15px_rgba(201,168,76,0.15)] scale-[1.02] cursor-pointer hover:shadow-md"
-                              : "bg-white/60 border-[#E8E7E2] opacity-70 cursor-pointer hover:opacity-90 hover:shadow-sm"
+                        : isLocked
+                          ? "bg-white/40 border-[#E8E7E2] opacity-40 cursor-not-allowed select-none"
+                          : isSetupRequired
+                            ? "bg-amber-50 border-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.15)] cursor-pointer hover:shadow-md"
+                            : isError
+                              ? "bg-white border-red-300 shadow-[0_0_10px_rgba(239,68,68,0.1)] cursor-pointer hover:shadow-md"
+                              : pendingApproval
+                                ? "bg-white border-blue-400 shadow-[0_0_15px_rgba(96,165,250,0.2)] scale-[1.02] cursor-pointer hover:shadow-md"
+                                : isActive
+                                  ? "bg-white border-[#C9A84C] shadow-[0_0_15px_rgba(201,168,76,0.15)] scale-[1.02] cursor-pointer hover:shadow-md"
+                                  : "bg-white/60 border-[#E8E7E2] opacity-70 cursor-pointer hover:opacity-90 hover:shadow-sm"
                     }`}
                     onClick={() => {
-                      if (agent.id === "orchestrator") return;
+                      if (agent.id === "orchestrator" || isLocked) return;
+                      if (isSetupRequired) {
+                        router.push(`/business/${businessId}/onboarding`);
+                        return;
+                      }
                       const tab = AGENT_ROUTES[agent.id];
                       if (tab) router.push(`/business/${businessId}/${tab}`);
                     }}
@@ -301,33 +389,52 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        {pendingApproval ? (
+                        {isLocked ? (
+                          <Lock size={13} className="text-neutral-300" />
+                        ) : isSetupRequired ? (
+                          <div className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 animate-pulse">
+                            Setup Required
+                          </div>
+                        ) : pendingApproval ? (
                           <div className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
                             Awaiting
                           </div>
                         ) : status !== "Idle" && (
                           <div className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                             status === "Running" ? "bg-amber-100 text-amber-700" :
+                            status === "Waiting" ? "bg-blue-100 text-blue-700" :
                             status === "Error"   ? "bg-red-100 text-red-600" :
                             "bg-neutral-100 text-neutral-600"
                           }`}>
                             {status}
                           </div>
                         )}
-                        {agent.id !== "orchestrator" && (
+                        {agent.id !== "orchestrator" && !isLocked && (
                           <ExternalLink size={11} className="text-neutral-300 group-hover:text-neutral-500 transition-colors" />
                         )}
                       </div>
                     </div>
 
-                    {agent.id === "orchestrator" && currentActive && (
-                      <div className="mt-3 flex gap-2">
+                    {agent.id === "orchestrator" && primaryActive && (
+                      <div className="mt-3 flex gap-2 flex-wrap">
                         <div className="text-[10px] bg-[#2A2A27] px-2 py-1 rounded text-neutral-300">
-                          Intent: {currentActive.type}
+                          {primaryActive.type}
                         </div>
                         <div className="text-[10px] bg-[#2A2A27] px-2 py-1 rounded text-neutral-300">
-                          {currentActive.state}
+                          {primaryActive.state}
                         </div>
+                        {runningAgentCount > 1 && (
+                          <div className="text-[10px] bg-purple-900 px-2 py-1 rounded text-purple-300">
+                            {runningAgentCount} concurrent
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {isSetupRequired && (
+                      <div className="mt-3 text-[10px] text-amber-700 font-medium flex items-center gap-1">
+                        <AlertCircle size={11} />
+                        {currentTask}
                       </div>
                     )}
 
@@ -339,6 +446,13 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                         <div className="text-[10px] text-amber-600 mt-2 font-medium">
                           {currentTask ?? "Agent executing logic..."}
                         </div>
+                      </div>
+                    )}
+
+                    {status === "Waiting" && agent.id !== "orchestrator" && (
+                      <div className="mt-3 text-[10px] text-blue-600 font-medium flex items-center gap-1">
+                        <Clock size={11} />
+                        {currentTask ?? "Waiting for dependency..."}
                       </div>
                     )}
 
@@ -355,7 +469,7 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                           {pendingApproval.type.replace(/_/g, " ")}
                         </div>
                         <button
-                          onClick={() => handleApprove(pendingApproval.id)}
+                          onClick={(e) => { e.stopPropagation(); handleApprove(pendingApproval.id); }}
                           className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-semibold rounded-md transition-colors"
                         >
                           Approve
@@ -393,11 +507,11 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
                     {wf.type.replace(/_/g, " ")}
                   </span>
                   <span className="text-[10px] bg-neutral-100 px-2 py-0.5 rounded text-neutral-500 uppercase">
-                    {wf.target_agent?.replace('_agent', '') || 'system'}
+                    {wf.target_agent?.replace("_agent", "") || "system"}
                   </span>
                 </div>
                 <div className="text-[10px] text-neutral-400 font-mono">
-                  {new Date(wf.created_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  {new Date(wf.created_at).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 </div>
               </div>
             )) : (
@@ -415,8 +529,16 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
             Command Interface
           </div>
           <div className="flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full ${realBusinessId ? 'bg-green-500' : 'bg-neutral-300 animate-pulse'}`} />
-            <span className="text-xs text-neutral-500 font-medium">{realBusinessId ? 'Connected' : 'Connecting...'}</span>
+            <div className={`w-2 h-2 rounded-full ${
+              !realBusinessId
+                ? "bg-neutral-300 animate-pulse"
+                : businessReady
+                  ? "bg-green-500"
+                  : "bg-amber-400 animate-pulse"
+            }`} />
+            <span className="text-xs text-neutral-500 font-medium">
+              {!realBusinessId ? "Connecting..." : businessReady ? "Connected" : "Setup Required"}
+            </span>
           </div>
         </div>
 
@@ -450,13 +572,42 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
           <div ref={messagesEndRef} />
         </div>
 
-        {currentActive && (
-          <div className="mx-4 mb-2 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-xs text-amber-700 font-medium">
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-            {currentActive.target_agent?.replace("_", " ")}: {currentActive.state}...
+        {/* Active pipelines indicator */}
+        {currentActives.length > 0 && (
+          <div className="mx-4 mb-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium">
+            {currentActives.length > 1 ? (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  {currentActives.length} pipelines running
+                </div>
+                {currentActives.slice(0, 3).map((w) => (
+                  <div key={w.id} className="text-[10px] text-amber-600 pl-3">
+                    · {w.target_agent?.replace("_agent", "") ?? "system"}: {w.state}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                {currentActives[0].target_agent?.replace("_", " ")}: {currentActives[0].state}...
+              </div>
+            )}
           </div>
         )}
 
+        {/* Setup required nudge inside chat panel */}
+        {businessReady === false && (
+          <div className="mx-4 mb-2 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between gap-2">
+            <p className="text-xs text-amber-700 font-medium">Agents locked until setup is complete.</p>
+            <Link
+              href={`/business/${businessId}/onboarding`}
+              className="shrink-0 text-[10px] font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-900"
+            >
+              Start Onboarding →
+            </Link>
+          </div>
+        )}
 
         <div className="p-4 border-t border-[#E8E7E2] bg-white rounded-b-xl">
           <div className="flex items-center gap-2 bg-[#FAFAF8] border border-[#E8E7E2] rounded-lg p-2 focus-within:border-[#C9A84C] transition-all shadow-inner">
@@ -464,7 +615,13 @@ export default function CommandCenter({ businessId }: CommandCenterProps) {
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder={realBusinessId ? "Ask the orchestrator..." : "Connecting to store..."}
+              placeholder={
+                !realBusinessId
+                  ? "Connecting to store..."
+                  : businessReady === false
+                    ? "Ask about your setup..."
+                    : "Ask the orchestrator..."
+              }
               disabled={!realBusinessId}
               className="flex-1 bg-transparent border-none outline-none text-sm text-[#141412] px-2 placeholder:text-neutral-400 disabled:cursor-not-allowed"
             />
