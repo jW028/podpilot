@@ -6,7 +6,7 @@ import type {
   CustomerServiceRunResult,
   CustomerServiceTicket,
   ConversationState,
-} from "@/types/customerService";
+} from "@/lib/types/customerService";
 
 const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 

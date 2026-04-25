@@ -1,4 +1,4 @@
-import type { ClassificationType, TicketSummary, CollectedDetails, ConversationState } from "@/types/customerService";
+import type { ClassificationType, TicketSummary, CollectedDetails, ConversationState } from "@/lib/types/customerService";
 
 interface ClassificationPattern {
   type: ClassificationType;
