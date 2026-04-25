@@ -117,37 +117,61 @@ export async function POST(
 ) {
   try {
     const { businessId } = await params;
-    const { shopId, token } = await resolveCredentials(businessId);
+    const { shopId: primaryShopId, token } = await resolveCredentials(businessId);
 
-    if (!shopId) return NextResponse.json({ error: "No Printify shop connected." }, { status: 400 });
     if (!token) return NextResponse.json({ error: "No Printify token configured." }, { status: 400 });
 
-    const productsRes = await fetch(
-      `https://api.printify.com/v1/shops/${shopId}/products.json?limit=10`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
+    type ProductEntry = { id: string; title: string; variants: Array<{ id: number; is_enabled: boolean }> };
 
-    if (!productsRes.ok) {
-      return NextResponse.json({ error: "Failed to fetch products from Printify." }, { status: 400 });
+    // Try primary shop first, then fall back to all available shops if products not found
+    async function findShopWithProducts(): Promise<{ shopId: string; product: ProductEntry } | null> {
+      const shopIds = [
+        primaryShopId,
+        process.env.PRINTIFY_SHOP_ID ?? null,
+      ].filter((id, i, arr): id is string => !!id && arr.indexOf(id) === i);
+
+      for (const id of shopIds) {
+        const res = await fetch(
+          `https://api.printify.com/v1/shops/${id}/products.json?limit=10`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!res.ok) continue;
+        const json = (await res.json()) as { data?: ProductEntry[] };
+        const found = json.data?.find((p) => p.variants.some((v) => v.is_enabled));
+        if (found) return { shopId: id, product: found };
+      }
+
+      // Last resort: list all shops and search each
+      const shopsRes = await fetch("https://api.printify.com/v1/shops.json", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (shopsRes.ok) {
+        const shops = (await shopsRes.json()) as Array<{ id: number }>;
+        for (const shop of shops) {
+          const id = String(shop.id);
+          if (shopIds.includes(id)) continue;
+          const res = await fetch(
+            `https://api.printify.com/v1/shops/${id}/products.json?limit=10`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          if (!res.ok) continue;
+          const json = (await res.json()) as { data?: ProductEntry[] };
+          const found = json.data?.find((p) => p.variants.some((v) => v.is_enabled));
+          if (found) return { shopId: id, product: found };
+        }
+      }
+      return null;
     }
 
-    const productsJson = (await productsRes.json()) as {
-      data?: Array<{
-        id: string;
-        title: string;
-        variants: Array<{ id: number; is_enabled: boolean }>;
-      }>;
-    };
-
-    const product = productsJson.data?.find((p) => p.variants.some((v) => v.is_enabled));
-
-    if (!product) {
+    const found = await findShopWithProducts();
+    if (!found) {
       return NextResponse.json(
-        { error: "No published products found in your Printify shop. Publish a product first." },
+        { error: "No published products found across your Printify shops. Publish a product first." },
         { status: 400 },
       );
     }
 
+    const { shopId, product } = found;
     const variant = product.variants.find((v) => v.is_enabled)!;
 
     const orderPayload = {

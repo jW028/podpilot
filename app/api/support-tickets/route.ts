@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import type { CustomerServiceTicket } from "@/types/customerService";
+import type { CustomerServiceTicket, TicketMessage } from "@/types/customerService";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,23 +16,36 @@ const STATUS_MAP: Record<string, CustomerServiceTicket["status"]> = {
 };
 
 function mapTicketRow(row: Record<string, unknown>): CustomerServiceTicket {
-  const messages = Array.isArray(row.messages) ? row.messages : [];
-  const lastMessage = messages[messages.length - 1] as Record<string, unknown> | undefined;
+  const rawMessages = Array.isArray(row.messages) ? row.messages as Record<string, unknown>[] : [];
+
+  const messages: TicketMessage[] = rawMessages.map((m) => ({
+    role: (m.role as TicketMessage["role"]) || "agent",
+    content: (m.content as string) || "",
+    actionType: m.actionType as string | undefined,
+    actionSummary: m.actionSummary as string | undefined,
+    context: m.context as TicketMessage["context"] | undefined,
+    timestamp: (m.timestamp as string) || new Date().toISOString(),
+  }));
+
+  const customerMsg = messages.find((m) => m.role === "customer");
+  const agentMsg = messages.find((m) => m.role === "agent");
 
   return {
     id: (row.id as string) || `${Date.now()}`,
     dbId: row.id as string,
-    customerMessage: "",
+    printifyOrderRef: (row.printify_order_ref as string | null) ?? null,
+    customerMessage: customerMsg?.content || "",
     tier: (row.priority as string) === "high" || (row.priority as string) === "urgent" ? "extreme"
       : (row.priority as string) === "normal" ? "mid" : "easy",
     confidence: 1,
     issueType: (row.issue_type as string) || "general",
     classification: "company_follow_up_other",
     status: STATUS_MAP[(row.status as string)] || "open",
-    aiReply: (lastMessage?.content as string) || "",
-    actionType: (lastMessage?.actionType as CustomerServiceTicket["actionType"]) || "none",
-    actionSummary: (lastMessage?.actionSummary as string) || null,
+    aiReply: agentMsg?.content || "",
+    actionType: (agentMsg?.actionType as CustomerServiceTicket["actionType"]) || "none",
+    actionSummary: agentMsg?.actionSummary || null,
     ticketSummary: null,
+    messages,
     createdAt: (row.created_at as string) || new Date().toISOString(),
     resolvedAt: (row.status as string) === "resolved" || (row.status as string) === "closed"
       ? (row.updated_at as string) || null
@@ -71,19 +84,24 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { id, resolutionMessage } = body as {
+    const { id, message, action = "reply" } = body as {
       id?: string;
-      resolutionMessage?: string;
+      message?: string;
+      // "reply" appends a message but keeps ticket open
+      // "resolve" appends a message and marks ticket resolved
+      action?: "reply" | "resolve";
     };
 
     if (!id) {
       return NextResponse.json({ error: "Ticket id is required." }, { status: 400 });
     }
+    if (!message?.trim() && action === "reply") {
+      return NextResponse.json({ error: "message is required for a reply." }, { status: 400 });
+    }
 
-    // Fetch current ticket to append to messages
     const { data: current, error: fetchError } = await supabase
       .from("support_tickets")
-      .select("messages")
+      .select("messages, status")
       .eq("id", id)
       .single();
 
@@ -92,22 +110,26 @@ export async function PATCH(request: Request) {
     }
 
     const existingMessages = Array.isArray(current.messages) ? current.messages : [];
-    const updatedMessages = [
-      ...existingMessages,
-      {
-        role: "manager",
-        content: resolutionMessage || "",
-        timestamp: new Date().toISOString(),
-      },
-    ];
+    const updatedMessages = message?.trim()
+      ? [
+          ...existingMessages,
+          {
+            role: "manager",
+            content: message.trim(),
+            timestamp: new Date().toISOString(),
+          },
+        ]
+      : existingMessages;
+
+    const updatePayload: Record<string, unknown> = { messages: updatedMessages };
+    if (action === "resolve") {
+      updatePayload.status = "resolved";
+      updatePayload.resolved_by = "human";
+    }
 
     const { data, error } = await supabase
       .from("support_tickets")
-      .update({
-        status: "resolved",
-        resolved_by: "human",
-        messages: updatedMessages,
-      })
+      .update(updatePayload)
       .eq("id", id)
       .select()
       .single();
