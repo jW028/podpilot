@@ -76,7 +76,7 @@ const MarkdownText = ({ content }: { content: string }) => {
   };
 
   lines.forEach((line, index) => {
-    const bulletMatch = line.match(/^[-•]\s+(.+)/);
+    const bulletMatch = line.match(/^[-•*]\s+(.+)/);
     const orderedMatch = line.match(/^\d+\.\s+(.+)/);
 
     if (bulletMatch) {

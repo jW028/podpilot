@@ -102,6 +102,38 @@ const BusinessOnboardingPage = ({
         "I am your Business Genesis Agent. Tell me your business idea, desired vibe, target audience, and product direction. I will help you shape a clear business direction before we hand off to design.",
     },
   ]);
+
+  // Load saved session data on mount
+  useEffect(() => {
+    try {
+      const savedMessages = sessionStorage.getItem(`chat_${businessId}`);
+      if (savedMessages) {
+        const parsed = JSON.parse(savedMessages);
+        if (parsed.length > 0) setMessages(parsed);
+      }
+      
+      const savedFramework = sessionStorage.getItem(`framework_${businessId}`);
+      if (savedFramework) {
+        setFramework(JSON.parse(savedFramework));
+      }
+    } catch (e) {
+      console.error("Failed to load session storage:", e);
+    }
+  }, [businessId]);
+
+  // Save messages whenever they change
+  useEffect(() => {
+    if (messages.length > 1) {
+      sessionStorage.setItem(`chat_${businessId}`, JSON.stringify(messages));
+    }
+  }, [messages, businessId]);
+
+  // Save framework whenever it changes
+  useEffect(() => {
+    if (framework) {
+      sessionStorage.setItem(`framework_${businessId}`, JSON.stringify(framework));
+    }
+  }, [framework, businessId]);
   const [draftMessage, setDraftMessage] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -248,6 +280,8 @@ const BusinessOnboardingPage = ({
 
       if (result.data.framework && result.data.frameworkReady) {
         setFramework(result.data.framework);
+      } else if (result.data.frameworkReady === false) {
+        setFramework(null);
       }
 
       if (latestFramework && hasProceedIntent(trimmed)) {
