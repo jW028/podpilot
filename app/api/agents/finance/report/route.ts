@@ -63,7 +63,32 @@ export async function POST(request: Request) {
       .order('snapshot_date', { ascending: true })
       .limit(7);
 
-    const chartData = (historicalSnapshots ?? []).map((row: any) => {
+    interface SnapshotRow {
+      snapshot_date: string;
+      metrics?: {
+        summary?: { total_revenue?: string };
+      };
+    }
+
+    interface ProductMetric {
+      title: string;
+      units_sold: number;
+      revenue: string;
+      cost?: string;
+      profit: string;
+      margin_pct: string;
+      product_id?: string;
+    }
+
+    interface SignalRow {
+      action?: string;
+      product_name?: string;
+      reason?: string;
+      product_id?: string;
+      priority?: string;
+    }
+
+    const chartData = (historicalSnapshots ?? []).map((row: SnapshotRow) => {
       const date = new Date(row.snapshot_date);
       const month = date.toLocaleString('en-MY', { month: 'short', year: '2-digit' });
       const revenue = parseFloat(row.metrics?.summary?.total_revenue ?? '0');
@@ -72,8 +97,8 @@ export async function POST(request: Request) {
 
     // ── Derived values ──────────────────────────────────────────────────
     const summary = snapshot.metrics?.summary ?? {};
-    const byProduct: any[] = snapshot.metrics?.by_product ?? [];
-    const signals: any[] = snapshot.signals ?? [];
+    const byProduct: ProductMetric[] = snapshot.metrics?.by_product ?? [];
+    const signals: SignalRow[] = snapshot.signals ?? [];
     const insights: string = snapshot.insights ?? '';
     const businessName = business?.name ?? 'Unknown Business';
     const marketplace = business?.marketplace ?? 'N/A';
@@ -89,12 +114,6 @@ export async function POST(request: Request) {
 
     // Max bar width for ASCII trend
     const maxRev = Math.max(...chartData.map(p => p.revenue), 1);
-    const trendRows = chartData
-      .map(p => {
-        const bars = Math.round((p.revenue / maxRev) * 20);
-        return `  ${p.month.padEnd(7)} ${'█'.repeat(bars)}${'░'.repeat(20 - bars)} RM ${p.revenue.toFixed(0)}`;
-      })
-      .join('\n');
 
     const productRows = byProduct
       .map(p =>
@@ -111,10 +130,10 @@ export async function POST(request: Request) {
     const glm = getGlmClient();
 
     // Build smart code-based fallbacks from real data (used if GLM fails/times out)
-    const topProduct = [...byProduct].sort((a: any, b: any) => parseFloat(b.margin_pct) - parseFloat(a.margin_pct))[0];
-    const bottomProduct = [...byProduct].sort((a: any, b: any) => parseFloat(a.margin_pct) - parseFloat(b.margin_pct))[0];
-    const repriceProducts = byProduct.filter((p: any) => parseFloat(p.margin_pct) < 30);
-    const boostProducts = byProduct.filter((p: any) => parseFloat(p.margin_pct) >= 40);
+    const topProduct = [...byProduct].sort((a: ProductMetric, b: ProductMetric) => parseFloat(b.margin_pct) - parseFloat(a.margin_pct))[0];
+    const bottomProduct = [...byProduct].sort((a: ProductMetric, b: ProductMetric) => parseFloat(a.margin_pct) - parseFloat(b.margin_pct))[0];
+    const repriceProducts = byProduct.filter((p: ProductMetric) => parseFloat(p.margin_pct) < 30);
+    const boostProducts = byProduct.filter((p: ProductMetric) => parseFloat(p.margin_pct) >= 40);
 
     const fallbackObs = [
       topProduct ? `${topProduct.title} leads with a ${parseFloat(topProduct.margin_pct).toFixed(1)}% margin and ${topProduct.units_sold} units sold, making it the strongest performer in the portfolio.` : '',
@@ -123,8 +142,8 @@ export async function POST(request: Request) {
     ].filter(Boolean).join(' ');
 
     const fallbackRec = [
-      boostProducts.length > 0 ? `1. Increase ad spend on ${boostProducts.map((p: any) => p.title).join(' and ')} — high margin makes them strong ROI candidates.` : '1. Identify top-margin products and allocate promotional budget accordingly.',
-      repriceProducts.length > 0 ? `2. Raise prices on ${repriceProducts.map((p: any) => p.title).join(', ')} to bring margins above 30%.` : '2. Maintain current pricing strategy as all products are above margin targets.',
+      boostProducts.length > 0 ? `1. Increase ad spend on ${boostProducts.map((p: ProductMetric) => p.title).join(' and ')} — high margin makes them strong ROI candidates.` : '1. Identify top-margin products and allocate promotional budget accordingly.',
+      repriceProducts.length > 0 ? `2. Raise prices on ${repriceProducts.map((p: ProductMetric) => p.title).join(', ')} to bring margins above 30%.` : '2. Maintain current pricing strategy as all products are above margin targets.',
       `3. Run a small paid promotion (RM 20–50) on ${topProduct?.title ?? 'top products'} to validate demand before scaling ad spend.`,
       `4. Set a monthly snapshot review cadence to track margin trends and act on Finance Agent signals promptly.`,
     ].join('\n');
@@ -160,8 +179,8 @@ Output ONLY the 3 sections separated by "|||". No titles, no intro text, no mark
       if (parts[0] && parts[0].length > 20) execSummary = parts[0];
       if (parts[1] && parts[1].length > 20) keyObs = parts[1];
       if (parts[2] && parts[2].length > 20) recommendations = parts[2];
-    } catch (glmErr: any) {
-      console.warn('[Report] GLM call failed, using code-based fallbacks:', glmErr.message);
+    } catch (glmErr: unknown) {
+      console.warn('[Report] GLM call failed, using code-based fallbacks:', glmErr instanceof Error ? glmErr.message : String(glmErr));
     }
 
     // ── Build HTML report (data tables rendered here, not by GLM) ───────
@@ -183,14 +202,14 @@ Output ONLY the 3 sections separated by "|||". No titles, no intro text, no mark
         const marginColor = m >= 40 ? '#2D7A4F' : m >= 25 ? '#D97706' : '#C0584A';
         const sig = signals.find(s => s.product_id === p.product_id);
         const sigLabel = sig
-          ? `<span style="background:${signalBadgeColor[sig.action?.toUpperCase()] ?? '#E5E7EB'};color:${signalTextColor[sig.action?.toUpperCase()] ?? '#374151'};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${sig.action?.toUpperCase()}</span>`
+          ? `<span style="background:${signalBadgeColor[sig.action?.toUpperCase() ?? ''] ?? '#E5E7EB'};color:${signalTextColor[sig.action?.toUpperCase() ?? ''] ?? '#374151'};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${sig.action?.toUpperCase() ?? ''}</span>`
           : '—';
         return `
           <tr style="border-bottom:1px solid #E8E7E2;">
             <td style="padding:10px 14px;font-weight:500;">${p.title}</td>
             <td style="padding:10px 14px;text-align:center;">${p.units_sold}</td>
             <td style="padding:10px 14px;text-align:right;">RM ${parseFloat(p.revenue).toFixed(2)}</td>
-            <td style="padding:10px 14px;text-align:right;">RM ${parseFloat(p.cost ?? 0).toFixed(2)}</td>
+            <td style="padding:10px 14px;text-align:right;">RM ${parseFloat(String(p.cost ?? '0')).toFixed(2)}</td>
             <td style="padding:10px 14px;text-align:right;font-weight:600;color:${parseFloat(p.profit) >= 0 ? '#2D7A4F' : '#C0584A'};">RM ${parseFloat(p.profit).toFixed(2)}</td>
             <td style="padding:10px 14px;text-align:center;font-weight:600;color:${marginColor};">${m.toFixed(1)}%</td>
             <td style="padding:10px 14px;text-align:center;">${sigLabel}</td>
@@ -358,7 +377,7 @@ Output ONLY the 3 sections separated by "|||". No titles, no intro text, no mark
 
     const browser = await puppeteer.launch({
       args: chromium.args,
-      defaultViewport: (chromium as any).defaultViewport,
+      defaultViewport: (chromium as { defaultViewport?: { width: number; height: number } }).defaultViewport,
       executablePath,
       headless: true,
     });
@@ -379,15 +398,15 @@ Output ONLY the 3 sections separated by "|||". No titles, no intro text, no mark
     }
 
     const date = new Date().toISOString().split('T')[0];
-    return new Response(pdfBuffer as any, {
+    return new Response(pdfBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="finance-report-${businessId}-${date}.pdf"`,
       },
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[API] Finance Report Error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to generate report' }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to generate report' }, { status: 500 });
   }
 }

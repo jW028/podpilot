@@ -1,9 +1,10 @@
 "use client";
 
 import Button from "@/components/ui/shared/Button";
+import MarkdownText from "@/components/ui/shared/MarkdownText";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 interface BusinessOnboardingPageProps {
   businessId: string;
@@ -58,7 +59,7 @@ const hasProceedIntent = (message: string) => {
 const randomId = () => Math.random().toString(36).slice(2, 10);
 
 const styles = {
-  container: "max-w-4xl mx-auto",
+  container: "max-w-4xl mx-auto p-8",
   heading: "font-serif text-3xl font-bold text-light-primary mb-2",
   subtext: "text-neutral-500 text-sm mb-8",
   panel: "bg-white border border-neutral-300 rounded-xl overflow-hidden",
@@ -73,7 +74,7 @@ const styles = {
   userAvatar: "bg-primary-500 text-light",
   bubble: "rounded-xl px-4 py-3 text-sm leading-relaxed",
   aiBubble: "bg-neutral-100 text-dark max-w-[85%]",
-  userBubble: "bg-dark text-light max-w-[80%] ml-auto",
+  userBubble: "bg-dark text-light max-w-[80%] ml-auto whitespace-pre-wrap",
   frameworkCard: "bg-white border border-primary-300 rounded-xl p-4",
   frameworkTitle:
     "text-xs uppercase tracking-wide text-primary-700 font-semibold",
@@ -106,6 +107,13 @@ const BusinessOnboardingPage = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom whenever messages update or thinking state changes
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isThinking]);
 
   const simplifiedMessages = useMemo(
     () => messages.map(({ role, content }) => ({ role, content })),
@@ -295,7 +303,11 @@ const BusinessOnboardingPage = ({
                     : styles.userBubble
                 }`}
               >
-                {message.content}
+                {message.role === "assistant" ? (
+                  <MarkdownText content={message.content} />
+                ) : (
+                  message.content
+                )}
               </div>
               {message.role === "user" && (
                 <div className={`${styles.avatar} ${styles.userAvatar}`}>
@@ -357,9 +369,12 @@ const BusinessOnboardingPage = ({
 
           {isThinking && (
             <div className="text-xs text-primary-700 border border-primary-300 rounded-lg px-3 py-2 bg-primary-50 inline-block">
-              Finalizing business profile and strategy...
+              Brainstorming ideas...
             </div>
           )}
+
+          {/* Scroll anchor */}
+          <div ref={bottomRef} />
         </div>
 
         <div className={styles.chatFooter}>
@@ -369,6 +384,14 @@ const BusinessOnboardingPage = ({
               placeholder="Reply to Genesis Agent..."
               value={draftMessage}
               onChange={(event) => setDraftMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (!isThinking && draftMessage.trim()) {
+                    void handleSendMessage();
+                  }
+                }
+              }}
             />
             <Button
               variant="primary"
@@ -379,11 +402,11 @@ const BusinessOnboardingPage = ({
               Send
             </Button>
           </div>
-          <p className="text-xs text-neutral-500 mt-2">
+          {/* <p className="text-xs text-neutral-500 mt-2">
             Tip: once the direction looks good, reply naturally with
             confirmation intent, for example &quot;yes, proceed with this
             business direction&quot;.
-          </p>
+          </p> */}
         </div>
       </div>
     </section>

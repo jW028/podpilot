@@ -26,25 +26,28 @@ type SalesChannel = {
 
 const supabaseClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
 const SETUP_STEPS = [
   {
     title: "Open Printify Dashboard",
-    detail: "Go to Stores in the left sidebar, then click \"Add new store\".",
+    detail: 'Go to Stores in the left sidebar, then click "Add new store".',
   },
   {
     title: "Choose a Sales Channel",
-    detail: "Select from Etsy, Shopify, WooCommerce, eBay, or other available channels.",
+    detail:
+      "Select from Etsy, Shopify, WooCommerce, eBay, or other available channels.",
   },
   {
     title: "Follow Printify's Connection Flow",
-    detail: "Each channel has its own authorization steps. Complete them to link the store.",
+    detail:
+      "Each channel has its own authorization steps. Complete them to link the store.",
   },
   {
     title: "Refresh Channels Here",
-    detail: "Once connected in Printify, click \"Refresh Channels\" below to sync them to PodCoPilot.",
+    detail:
+      'Once connected in Printify, click "Refresh Channels" below to sync them to PodCoPilot.',
   },
 ];
 
@@ -63,7 +66,9 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
         .maybeSingle();
 
       if (err) throw err;
-      const list: SalesChannel[] = Array.isArray(row?.sales_channels) ? row.sales_channels : [];
+      const list: SalesChannel[] = Array.isArray(row?.sales_channels)
+        ? row.sales_channels
+        : [];
       setChannels(list);
       setError(null);
     } catch {
@@ -72,12 +77,6 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchChannels();
-    // Also sync from Printify on initial load so channels are always up to date
-    handleRefresh();
-  }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -91,7 +90,9 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
         },
         body: JSON.stringify({ businessId }),
       });
@@ -102,24 +103,42 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
       }
 
       setChannels(json.channels || []);
-    } catch (err: any) {
-      setError(err.message || "Failed to refresh channels");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to refresh channels",
+      );
     } finally {
       setRefreshing(false);
     }
   };
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchChannels();
+      // Also sync from Printify on initial load so channels are always up to date
+      handleRefresh();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <section className="max-w-4xl mx-auto space-y-6">
+    <section className="max-w-4xl mx-auto space-y-6 p-8">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-dark">Sales Channels</h1>
+          <h1 className="font-serif text-3xl font-bold text-dark">
+            Sales Channels
+          </h1>
           <p className="text-sm text-neutral-500 mt-2">
             Manage your connected Printify sales channels and set up new ones.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="md" onClick={handleRefresh} disabled={refreshing}>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
             {refreshing ? (
               <span className="inline-flex items-center gap-2">
                 <FiRefreshCw className="animate-spin" size={14} />
@@ -159,8 +178,8 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
           </div>
         ) : channels.length === 0 ? (
           <p className="text-sm text-neutral-500">
-            No sales channels connected yet. Follow the setup guide below to connect your first
-            channel.
+            No sales channels connected yet. Follow the setup guide below to
+            connect your first channel.
           </p>
         ) : (
           <div className="space-y-2">
@@ -170,13 +189,18 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
                 className="flex items-center justify-between rounded-lg border border-neutral-200 bg-light px-4 py-3"
               >
                 <div className="flex items-center gap-3">
-                  <FiCheckCircle className="text-primary-700 shrink-0" size={16} />
+                  <FiCheckCircle
+                    className="text-primary-700 shrink-0"
+                    size={16}
+                  />
                   <div>
                     <p className="text-sm font-medium text-dark">{ch.title}</p>
                     <p className="text-xs text-neutral-500">{ch.channel}</p>
                   </div>
                 </div>
-                <span className="text-xs text-neutral-400">Shop {ch.shop_id}</span>
+                <span className="text-xs text-neutral-400">
+                  Shop {ch.shop_id}
+                </span>
               </div>
             ))}
           </div>
@@ -187,8 +211,9 @@ const ChannelSetupPage = ({ businessId }: ChannelSetupPageProps) => {
       <div className="rounded-xl border border-neutral-300 bg-white p-5 space-y-5">
         <h2 className="font-serif text-xl text-dark">Connect a New Channel</h2>
         <p className="text-sm text-neutral-600">
-          Each Printify store is connected to one sales channel (Etsy, Shopify, etc.). To add a new
-          channel, create a new store inside your Printify account.
+          Each Printify store is connected to one sales channel (Etsy, Shopify,
+          etc.). To add a new channel, create a new store inside your Printify
+          account.
         </p>
 
         <div className="space-y-4">

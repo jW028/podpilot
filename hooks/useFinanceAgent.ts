@@ -8,11 +8,11 @@ const supabase = createClient(
 );
 
 export function useFinanceAgent(businessId: string | string[]) {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const runAnalysis = useCallback(async ({ days = 30, userMessage = null }: any = {}) => {
+  const runAnalysis = useCallback(async ({ days = 30, userMessage = null }: { days?: number; userMessage?: string | null } = {}) => {
     if (!businessId) return;
     
     setLoading(true);
@@ -36,8 +36,8 @@ export function useFinanceAgent(businessId: string | string[]) {
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || 'Failed to run analysis');
       setData(json);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }

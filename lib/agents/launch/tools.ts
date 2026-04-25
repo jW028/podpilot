@@ -1,7 +1,10 @@
-import axios from 'axios';
-import { readFile } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
-import type { LaunchProductInput, SuggestedPrices, PrintifyResult } from '@/lib/types';
+import { readFile } from "node:fs/promises";
+import { basename, resolve } from "node:path";
+import type {
+  LaunchProductInput,
+  SuggestedPrices,
+  PrintifyResult,
+} from "@/lib/types";
 
 type TavilySearchResult = {
   title?: string;
@@ -9,63 +12,110 @@ type TavilySearchResult = {
   url?: string | null;
 };
 
-const printifyBase = 'https://api.printify.com/v1';
+const printifyBase = "https://api.printify.com/v1";
 const defaultSafetyInformation =
-  'GPSR information: John Doe, test@example.com, 123 Main St, Apt 1, New York, NY, 10001, US Product information: Gildan, 5000, 2 year warranty in EU and UK as per Directive 1999/44/EC Warnings, Hazard: No warranty, US Care instructions: Machine wash: warm (max 40C or 105F), Non-chlorine: bleach as needed, Tumble dry: medium, Do not iron, Do not dryclean';
+  "GPSR information: John Doe, test@example.com, 123 Main St, Apt 1, New York, NY, 10001, US Product information: Gildan, 5000, 2 year warranty in EU and UK as per Directive 1999/44/EC Warnings, Hazard: No warranty, US Care instructions: Machine wash: warm (max 40C or 105F), Non-chlorine: bleach as needed, Tumble dry: medium, Do not iron, Do not dryclean";
 
 export const TOOL_DEFINITIONS = [
   {
-    type: 'function',
+    type: "function",
     function: {
-      name: 'performMarketResearch',
-      description: 'Fetches real-time price info and market trends for the intended product.',
+      name: "performMarketResearch",
+      description:
+        "Fetches real-time price info and market trends for the intended product.",
       parameters: {
-        type: 'object',
+        type: "object",
         properties: {
-          productName: { type: 'string', description: 'Name of the product' },
-          categories: { type: 'array', items: { type: 'string' }, description: 'List of categories e.g. hoodie, mug' },
+          productName: { type: "string", description: "Name of the product" },
+          categories: {
+            type: "array",
+            items: { type: "string" },
+            description: "List of categories e.g. hoodie, mug",
+          },
         },
-        required: ['productName', 'categories'],
+        required: ["productName", "categories"],
       },
     },
   },
   {
-    type: 'function',
+    type: "function",
     function: {
-      name: 'createPrintifyProduct',
-      description: 'Creates a new product on Printify with the selected prices.',
+      name: "createPrintifyProduct",
+      description:
+        "Creates a new product on Printify with the selected prices.",
       parameters: {
-        type: 'object',
+        type: "object",
         properties: {
           prices: {
-            type: 'object',
-            description: 'The optimal suggested prices to use for each category.',
-            additionalProperties: { type: 'number' },
+            type: "object",
+            description:
+              "The optimal suggested prices to use for each category.",
+            additionalProperties: { type: "number" },
           },
           reasoning: {
-            type: 'string',
-            description: 'The reasoning used to determine these prices based on market research.',
+            type: "string",
+            description:
+              "The reasoning used to determine these prices based on market research.",
           },
         },
-        required: ['prices', 'reasoning'],
+        required: ["prices", "reasoning"],
       },
     },
   },
   {
-    type: 'function',
+    type: "function",
     function: {
-      name: 'publishProductToSalesChannel',
-      description: 'Publishes a created Printify product to the connected sales channel (e.g. Etsy).',
+      name: "publishProductToSalesChannel",
+      description:
+        "Publishes a created Printify product to the connected sales channel (e.g. Etsy).",
       parameters: {
-        type: 'object',
+        type: "object",
         properties: {
-          productId: { type: 'string', description: 'The ID of the printify product to publish.' },
+          productId: {
+            type: "string",
+            description: "The ID of the printify product to publish.",
+          },
         },
-        required: ['productId'],
+        required: ["productId"],
       },
     },
   },
 ];
+
+async function printifyRequest<T>(
+  method: string,
+  path: string,
+  token: string,
+  body?: unknown,
+  timeoutMs = 30_000,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${printifyBase}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": "PODCoPilot-Hackathon",
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Printify request failed (${response.status}): ${errorText}`,
+      );
+    }
+
+    return response.json() as Promise<T>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export async function performMarketResearch({
   productName,
@@ -76,43 +126,48 @@ export async function performMarketResearch({
 }) {
   const tavilyApiKey = process.env.TAVILY_API_KEY;
   if (!tavilyApiKey) {
-    console.warn('Missing TAVILY_API_KEY, market research skipped.');
-    return 'Market research skipped: Missing TAVILY_API_KEY';
+    console.warn("Missing TAVILY_API_KEY, market research skipped.");
+    return "Market research skipped: Missing TAVILY_API_KEY";
   }
 
   const queries = [
-    `${productName} ${categories.join(' ')} price Etsy`,
-    `${productName} ${categories.join(' ')} price Shopee Malaysia`,
-    `${productName} ${categories.join(' ')} price TikTok Shop`,
+    `${productName} ${categories.join(" ")} price Etsy`,
+    `${productName} ${categories.join(" ")} price Shopee Malaysia`,
+    `${productName} ${categories.join(" ")} price TikTok Shop`,
   ];
 
-  let results = '';
+  let results = "";
   for (const q of queries) {
     try {
-      const response = await fetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           api_key: tavilyApiKey,
           query: q,
           max_results: 4,
-          topic: 'general',
-          search_depth: 'basic',
+          topic: "general",
+          search_depth: "basic",
         }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Tavily request failed (${response.status}): ${errorText}`);
+        throw new Error(
+          `Tavily request failed (${response.status}): ${errorText}`,
+        );
       }
 
-      const payload = (await response.json()) as { results?: TavilySearchResult[] };
+      const payload = (await response.json()) as {
+        results?: TavilySearchResult[];
+      };
       const top = (payload.results || []).slice(0, 4);
       results += `Query: ${q}\n${top
         .map(
-          (r: TavilySearchResult) => `Title: ${r.title}\nSnippet: ${r.content}\nLink: ${r.url ?? 'N/A'}\n`
+          (r: TavilySearchResult) =>
+            `Title: ${r.title}\nSnippet: ${r.content}\nLink: ${r.url ?? "N/A"}\n`,
         )
-        .join('\n')}\n\n`;
+        .join("\n")}\n\n`;
     } catch (error) {
       console.error(`Tavily search failed for query "${q}":`, error);
       results += `Search failed for ${q}\n`;
@@ -121,56 +176,60 @@ export async function performMarketResearch({
   return results;
 }
 
-function parseVariantIds(raw: string | undefined, fallback: number[]): number[] {
+function parseVariantIds(
+  raw: string | undefined,
+  fallback: number[],
+): number[] {
   if (!raw) return fallback;
   const parsed = raw
-    .split(',')
+    .split(",")
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isInteger(item) && item > 0);
   return parsed.length > 0 ? parsed : fallback;
 }
 
-async function uploadPlaceholderImageToPrintify(token: string): Promise<string> {
+async function uploadPlaceholderImageToPrintify(
+  token: string,
+): Promise<string> {
   if (process.env.PRINTIFY_IMAGE_ID) {
-    console.log('Using PRINTIFY_IMAGE_ID from env, skipping upload.');
+    console.log("Using PRINTIFY_IMAGE_ID from env, skipping upload.");
     return process.env.PRINTIFY_IMAGE_ID;
   }
 
-  const imagePath = process.env.PRINTIFY_PLACEHOLDER_IMAGE || 'assets/printify-placeholders/image.png';
+  const imagePath =
+    process.env.PRINTIFY_PLACEHOLDER_IMAGE ||
+    "assets/printify-placeholders/image.png";
   const absoluteImagePath = resolve(process.cwd(), imagePath);
   console.log(`Uploading placeholder image: ${absoluteImagePath}`);
   const fileBuffer = await readFile(absoluteImagePath);
   const fileName = basename(absoluteImagePath);
-  const base64Contents = fileBuffer.toString('base64');
+  const base64Contents = fileBuffer.toString("base64");
 
-  const response = await axios.post(
-    `${printifyBase}/uploads/images.json`,
+  const data = await printifyRequest<{ id?: string | number }>(
+    "POST",
+    "/uploads/images.json",
+    token,
     { file_name: fileName, contents: base64Contents },
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'PODCoPilot-Hackathon',
-      },
-      timeout: 30_000,
-    }
   );
 
-  const uploadId = response?.data?.id;
+  const uploadId = data?.id;
   if (!uploadId) {
-    throw new Error('Printify upload response missing image id.');
+    throw new Error("Printify upload response missing image id.");
   }
   return String(uploadId);
 }
 
-function mockPrintifyCreation(_productData: LaunchProductInput, prices: SuggestedPrices): PrintifyResult {
+function mockPrintifyCreation(
+  _productData: LaunchProductInput,
+  prices: SuggestedPrices,
+): PrintifyResult {
   return {
     success: true,
     product_id: `mock-pf-${Date.now()}`,
-    status: 'created (mock)',
-    printify_url: 'https://printify.com/demo-product',
+    status: "created (mock)",
+    printify_url: "https://printify.com/demo-product",
     prices_used: prices,
-    note: 'Mock response — real API would return live product',
+    note: "Mock response — real API would return live product",
   };
 }
 
@@ -186,34 +245,41 @@ export async function createPrintifyProduct({
   shopId: string;
 }): Promise<PrintifyResult> {
   if (!printifyToken || !shopId) {
-    console.log('⚠️ No Printify credentials → returning mock');
+    console.log("⚠️ No Printify credentials → returning mock");
     return mockPrintifyCreation(productData, prices);
   }
 
   const blueprintId = Number(process.env.PRINTIFY_BLUEPRINT_ID || 384);
   const printProviderId = Number(process.env.PRINTIFY_PROVIDER_ID || 1);
-  const variantIds = parseVariantIds(process.env.PRINTIFY_VARIANT_IDS, [45740, 45742, 45744, 45746]);
+  const variantIds = parseVariantIds(
+    process.env.PRINTIFY_VARIANT_IDS,
+    [45740, 45742, 45744, 45746],
+  );
 
   try {
-    console.log('Creating product on Printify...', { blueprintId, printProviderId, variantIds });
+    console.log("Creating product on Printify...", {
+      blueprintId,
+      printProviderId,
+      variantIds,
+    });
     const designImageId = await uploadPlaceholderImageToPrintify(printifyToken);
     console.log(`Design image ID: ${designImageId}`);
-    
-    // Calculate fallback basePrice safely
+
     const basePrice =
-      (Number.isFinite(prices?.hoodie) && prices.hoodie > 0
+      Number.isFinite(prices?.hoodie) && prices.hoodie > 0
         ? prices.hoodie
         : Number.isFinite(prices?.tshirt) && prices.tshirt > 0
           ? prices.tshirt
           : Number.isFinite(prices?.mug) && prices.mug > 0
             ? prices.mug
-            : 400);
+            : 400;
 
     const payload = {
       title: productData.name,
       description: productData.description,
-      safety_information: process.env.PRINTIFY_SAFETY_INFORMATION || defaultSafetyInformation,
-      tags: productData.tags || ['pod', 'custom'],
+      safety_information:
+        process.env.PRINTIFY_SAFETY_INFORMATION || defaultSafetyInformation,
+      tags: productData.tags || ["pod", "custom"],
       blueprint_id: blueprintId,
       print_provider_id: printProviderId,
       variants: variantIds.map((id, index) => ({
@@ -226,30 +292,28 @@ export async function createPrintifyProduct({
           variant_ids: variantIds,
           placeholders: [
             {
-              position: 'front',
-              images: [{ id: designImageId, x: 0.5, y: 0.5, scale: 1, angle: 0 }],
+              position: "front",
+              images: [
+                { id: designImageId, x: 0.5, y: 0.5, scale: 1, angle: 0 },
+              ],
             },
           ],
         },
       ],
     };
 
-    const resp = await axios.post(`${printifyBase}/shops/${shopId}/products.json`, payload, {
-      headers: {
-        Authorization: `Bearer ${printifyToken}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'PODCoPilot-Hackathon',
-      },
-      timeout: 30_000,
-    });
-    console.log(`Printify product created: ${resp.data.id}`);
-    return { success: true, product_id: resp.data.id, ...resp.data };
+    const respData = await printifyRequest<
+      { id: string } & Record<string, unknown>
+    >("POST", `/shops/${shopId}/products.json`, printifyToken, payload);
+
+    console.log(`Printify product created: ${respData.id}`);
+    return { success: true, product_id: respData.id, ...respData };
   } catch (e: unknown) {
-    const err = e as { response?: { data?: unknown }; message?: string };
+    const err = e as { message?: string };
     console.error(
-      'Printify error:',
-      err.response?.data || err.message,
-      'Set PRINTIFY_PLACEHOLDER_IMAGE to a valid local file path or use PRINTIFY_IMAGE_ID.'
+      "Printify error:",
+      err.message,
+      "Set PRINTIFY_PLACEHOLDER_IMAGE to a valid local file path or use PRINTIFY_IMAGE_ID.",
     );
     return mockPrintifyCreation(productData, prices);
   }
@@ -265,23 +329,29 @@ export async function publishProductToSalesChannel({
   printifyToken: string;
   shopId: string;
   waitForPublish?: boolean;
-}): Promise<{ published: boolean; publish_status: string; external_product_id?: string }> {
+}): Promise<{
+  published: boolean;
+  publish_status: string;
+  external_product_id?: string;
+}> {
   if (!printifyToken || !shopId) {
-    return { published: false, publish_status: 'skipped' };
+    return { published: false, publish_status: "skipped" };
   }
 
-  if (productId.startsWith('mock-pf-')) {
-    return { published: true, publish_status: 'published (mock)' };
+  if (productId.startsWith("mock-pf-")) {
+    return { published: true, publish_status: "published (mock)" };
   }
 
-  if (process.env.PRINTIFY_PUBLISH_ENABLED === 'false') {
-    return { published: false, publish_status: 'disabled' };
+  if (process.env.PRINTIFY_PUBLISH_ENABLED === "false") {
+    return { published: false, publish_status: "disabled" };
   }
 
   try {
     console.log(`Publishing product ${productId} to sales channel...`);
-    await axios.post(
-      `${printifyBase}/shops/${shopId}/products/${productId}/publish.json`,
+    await printifyRequest(
+      "POST",
+      `/shops/${shopId}/products/${productId}/publish.json`,
+      printifyToken,
       {
         title: true,
         description: true,
@@ -291,64 +361,74 @@ export async function publishProductToSalesChannel({
         keyFeatures: true,
         shipping_template: true,
       },
-      {
-        headers: {
-          Authorization: `Bearer ${printifyToken}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'PODCoPilot-Hackathon',
-        },
-        timeout: 30_000,
-      }
     );
 
     if (!waitForPublish) {
-      return { published: false, publish_status: 'publishing' };
+      return { published: false, publish_status: "publishing" };
     }
 
     const maxAttempts = Number(process.env.PRINTIFY_PUBLISH_MAX_ATTEMPTS || 40);
     const intervalMs = Number(process.env.PRINTIFY_PUBLISH_INTERVAL_MS || 3000);
-    const safeMaxAttempts = Number.isFinite(maxAttempts) && maxAttempts > 0 ? maxAttempts : 40;
-    const safeIntervalMs = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 3000;
+    const safeMaxAttempts =
+      Number.isFinite(maxAttempts) && maxAttempts > 0 ? maxAttempts : 40;
+    const safeIntervalMs =
+      Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 3000;
 
     let lastKnownStatus: string | undefined;
     for (let attempt = 0; attempt < safeMaxAttempts; attempt++) {
       await new Promise((r) => setTimeout(r, safeIntervalMs));
       console.log(`Publish poll attempt ${attempt + 1}/${safeMaxAttempts}...`);
 
-      const resp = await axios.get(`${printifyBase}/shops/${shopId}/products/${productId}.json`, {
-        headers: {
-          Authorization: `Bearer ${printifyToken}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'PODCoPilot-Hackathon',
-        },
-        timeout: 15_000,
-      });
+      const data = await printifyRequest<Record<string, unknown>>(
+        "GET",
+        `/shops/${shopId}/products/${productId}.json`,
+        printifyToken,
+        undefined,
+        15_000,
+      );
 
-      const isPublished = resp.data?.is_published;
+      const isPublished = data?.is_published;
       const publishingStatus =
-        resp.data?.publishing_status ||
-        resp.data?.publishing?.status ||
-        resp.data?.publishing ||
-        resp.data?.status;
+        data?.publishing_status ||
+        (data?.publishing as Record<string, unknown>)?.status ||
+        data?.publishing ||
+        data?.status;
 
-      if (typeof publishingStatus === 'string' && publishingStatus.trim().length > 0) {
+      if (
+        typeof publishingStatus === "string" &&
+        publishingStatus.trim().length > 0
+      ) {
         lastKnownStatus = publishingStatus;
       }
 
       if (isPublished) {
-        return { published: true, publish_status: 'published', external_product_id: resp.data?.external?.id };
+        return {
+          published: true,
+          publish_status: "published",
+          external_product_id: (data?.external as Record<string, unknown>)
+            ?.id as string | undefined,
+        };
       }
 
-      if (typeof publishingStatus === 'string' && /fail|error|rejected/i.test(publishingStatus)) {
-        return { published: false, publish_status: `failed (${publishingStatus})` };
+      if (
+        typeof publishingStatus === "string" &&
+        /fail|error|rejected/i.test(publishingStatus)
+      ) {
+        return {
+          published: false,
+          publish_status: `failed (${publishingStatus})`,
+        };
       }
     }
 
-    const suffix = lastKnownStatus ? `; last_status=${lastKnownStatus}` : '';
-    return { published: false, publish_status: `publishing (timed out${suffix})` };
+    const suffix = lastKnownStatus ? `; last_status=${lastKnownStatus}` : "";
+    return {
+      published: false,
+      publish_status: `publishing (timed out${suffix})`,
+    };
   } catch (e: unknown) {
-    const err = e as { response?: { data?: unknown }; message?: string };
-    console.error('Printify publish error:', err.response?.data || err.message);
-    return { published: false, publish_status: 'failed' };
+    const err = e as { message?: string };
+    console.error("Printify publish error:", err.message);
+    return { published: false, publish_status: "failed" };
   }
 }

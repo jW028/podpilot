@@ -2,7 +2,7 @@ import 'dotenv/config';
 import axios from 'axios';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
-import type { LaunchProductInput, SuggestedPrices, PrintifyResult } from '@/lib/types';
+import type { LaunchProductInput } from '@/lib/types';
 import { resolveBusinessPrintifyToken } from '@/lib/printify/credentials';
 import {
   performMarketResearch,
@@ -94,9 +94,9 @@ export async function runLaunchAgent({
   const launchId = launchRecord.id;
 
   // 3. Build the tool executor
-  const toolState: any = { marketResearchSummary: '', printifyResult: null, publishResult: null, prices: null, reasoning: '' };
+  const toolState: { marketResearchSummary: string; printifyResult: { product_id?: string; [key: string]: unknown } | null; publishResult: { publish_status?: string; published?: boolean; external_product_id?: string; [key: string]: unknown } | null; prices: Record<string, number> | null; reasoning: string } = { marketResearchSummary: '', printifyResult: null, publishResult: null, prices: null, reasoning: '' };
   
-  async function executeTool(name: string, args: any) {
+  async function executeTool(name: string, args: Record<string, unknown>) {
     try {
       switch (name) {
         case 'performMarketResearch': {
@@ -209,7 +209,7 @@ export async function runLaunchAgent({
           // Signal finance agent: product launched
           if (res.published || res.publish_status === 'published (mock)') {
             const listedPrice = Object.values(toolState.prices || {}).find(
-              (v: any) => Number.isFinite(v) && v > 0
+              (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v > 0
             ) ?? 0;
             await supabase.from('workflows').insert({
               business_id: businessId,
@@ -233,9 +233,10 @@ export async function runLaunchAgent({
         default:
           return { error: `Unknown tool: ${name}` };
       }
-    } catch (err: any) {
-      console.error(`[Launch Agent] Tool ${name} failed:`, err.message);
-      return { error: err.message, tool: name, recoverable: true };
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(`[Launch Agent] Tool ${name} failed:`, errorMessage);
+      return { error: errorMessage, tool: name, recoverable: true };
     }
   }
 
@@ -249,7 +250,7 @@ WORKFLOW — follow these steps in order:
 4. After all calls complete, give a concise summary message. You must exclusively use the tools provided.`;
 
   // 5. Run the agentic tools loop
-  const messages: any[] = [
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
@@ -264,7 +265,7 @@ WORKFLOW — follow these steps in order:
     const response = await glm.chat.completions.create({
       model: (process.env.GLM_MODEL || 'ilmu-glm-5.1').trim(),
       messages,
-      tools: TOOL_DEFINITIONS as any,
+      tools: TOOL_DEFINITIONS as OpenAI.Chat.ChatCompletionTool[],
       tool_choice: 'auto',
       max_tokens: 2048,
       temperature: 0.4,
@@ -404,9 +405,9 @@ export async function pollPublishStatus(launchId: string) {
           // Product exists on this shop and is still publishing; continue attempts.
           lastNon404Error = null;
           break;
-        } catch (shopErr: any) {
-          const status = shopErr?.response?.status;
-          const msg = shopErr?.message || 'unknown error';
+        } catch (shopErr: unknown) {
+          const status = axios.isAxiosError(shopErr) ? shopErr.response?.status : undefined;
+          const msg = shopErr instanceof Error ? shopErr.message : 'unknown error';
           // Product may belong to another shop; keep trying candidates.
           if (status === 400 || status === 404) {
             continue;
@@ -420,8 +421,8 @@ export async function pollPublishStatus(launchId: string) {
           `[PollPublish] attempt ${attempt + 1}: shop ${lastNon404Error.shopId} error ${lastNon404Error.message}`
         );
       }
-    } catch (err: any) {
-      console.error(`[PollPublish] Poll error attempt ${attempt + 1}:`, err.message);
+    } catch (err: unknown) {
+      console.error(`[PollPublish] Poll error attempt ${attempt + 1}:`, err instanceof Error ? err.message : String(err));
     }
   }
 
