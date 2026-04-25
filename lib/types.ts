@@ -25,6 +25,7 @@ export type {
   PrintifyResponse, 
   ProductMetric, 
   Metrics,
+  MetricsSummary,
   ProductSignal, 
   Alert,
   DetectAnomaliesResult,
