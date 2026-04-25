@@ -33,3 +33,14 @@ export type {
   AgentName,
   HandlerResult,
 } from "./workflow";
+
+export type {
+  PrintifyLineItem,
+  PrintifyOrder,
+  PrintifyResponse,
+  ProductMetric,
+  MetricsSummary,
+  Metrics,
+  ToolState,
+  DetectAnomaliesResult,
+} from './finance';

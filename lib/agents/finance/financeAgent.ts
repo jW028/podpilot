@@ -6,8 +6,10 @@ import {
   detectAnomalies,
   TOOL_DEFINITIONS,
 } from './tools';
-import { handleFinanceSignals } from '../orchestrator/signalHandler';
-import { processIncomingMessages } from './receiveHandler';
+import type { Metrics, ToolState, DetectAnomaliesResult, ProductSignal, Alert} from '@/lib/types';
+import { handleFinanceSignals } from '@/lib/agents/orchestrator/signalHandler';
+import { processIncomingMessages } from '@/lib/agents/finance/receiveHandler';
+
 
 // GLM uses the OpenAI SDK — just swap the base URL
 function getGlmClient(): OpenAI {
@@ -47,13 +49,9 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
   if (error || !business) throw new Error('Business not found');
 
   const shopId = business.printify_shop_id;
-  // According to db.md, printify_token is not stored in the database.
-  // Using the PRINTIFY_DEV_TOKEN from .env file for integration.
   const printifyToken = process.env.PRINTIFY_DEV_TOKEN;
 
   // 2. Check cache FIRST — serve the most recent snapshot (within last 7 days).
-  //    Using a 7-day window instead of strict today-only so mock/seeded data always loads
-  //    even when the agent hasn't run today yet (e.g. no live Printify token in dev).
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
   const { data: cached, error: cacheError } = await supabase
@@ -70,12 +68,70 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
     console.warn('[Finance Agent] Cache lookup failed, running fresh analysis:', cacheError.message);
   }
 
-  // Return cached snapshot if available AND no user-specific question
-  if (cached && !cacheError && !userMessage) {
+  // Check if cache has real data (not an empty placeholder)
+  const cachedMetrics = cached?.metrics as Metrics| null | undefined;
+  const hasValidCache =
+    cached &&
+    !cacheError &&
+    cachedMetrics &&
+    typeof cachedMetrics === 'object' &&
+    Object.keys(cachedMetrics).length > 0 &&
+    (cachedMetrics as Metrics)?.summary !== undefined;
+
+  // ── CHAT MODE with valid cache: answer using cached metrics ──────────────
+  if (userMessage && hasValidCache && cachedMetrics) {
+    console.log('[FinanceAgent] Chat mode — using cached metrics as context');
+    const metrics = cachedMetrics as Metrics;
+
+    const topProducts = (metrics?.by_product ?? [])
+      .slice(0, 5)
+      .map((p) => `- ${p.title}: ${p.units_sold} units sold, ${p.margin_pct}% margin`)
+      .join('\n');
+
+    const chatMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content: `You are the Finance Agent for "${business.name}", an AI-operated print-on-demand business on Podilot.
+
+You have access to the latest financial snapshot (last ${days} days). Use this data to answer the user's question directly and concisely.
+
+FINANCIAL SNAPSHOT:
+- Total Orders: ${metrics?.summary?.total_orders ?? 'N/A'}
+- Total Revenue: ${metrics?.summary?.total_revenue ?? 'N/A'}
+- Total Costs: ${metrics?.summary?.total_costs ?? 'N/A'}
+- Total Profit: ${metrics?.summary?.total_profit ?? 'N/A'}
+- Overall Margin: ${metrics?.summary?.overall_margin_pct ?? 'N/A'}%
+
+TOP PRODUCTS:
+${topProducts || 'No product data available'}
+
+Be specific, reference the numbers above, and keep your answer under 150 words.`,
+      },
+      { role: 'user', content: userMessage },
+    ];
+
+    const chatResponse = await glm.chat.completions.create({
+      model: process.env.GLM_MODEL || 'ilmu-glm-5.1',
+      messages: chatMessages,
+      max_tokens: 1024,
+      temperature: 0.4,
+    });
+
     return {
-      metrics: cached.metrics,
-      insights: cached.insights,
-      signals: cached.signals,
+      metrics: cached!.metrics,
+      insights: chatResponse.choices[0].message.content || '',
+      signals: cached!.signals,
+      cached: true,
+      chatMode: true,
+    };
+  }
+
+  // ── NORMAL MODE with valid cache (no userMessage): return snapshot directly ──
+  if (!userMessage && hasValidCache) {
+    return {
+      metrics: cached!.metrics,
+      insights: cached!.insights,
+      signals: cached!.signals,
       cached: true,
     };
   }
@@ -86,15 +142,14 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
   }
 
   // 4. Build the tool executor — the GLM agent will call these by name
-  const toolState: { metrics?: unknown; signals?: unknown; [key: string]: unknown } = {};  // { orders: [...], metrics: { summary, by_product } }
+  const toolState: ToolState = {};  // { orders: [...], metrics: { summary, by_product } }
   const toolContext = { printifyToken, shopId, days, toolState };
 
   async function executeTool(name: string, args: Record<string, unknown>) {
     try {
       switch (name) {
         case 'fetchPrintifyOrders':
-          // GLM may pass a `days` override — respect it, otherwise use run-level default
-          return await fetchPrintifyOrders({ ...toolContext, days: args.days || days });
+          return await fetchPrintifyOrders({ ...toolContext, days: (args.days as number) || days });
         case 'calculateProfitMetrics':
           return calculateProfitMetrics({ toolState });
         case 'detectAnomalies':
@@ -109,7 +164,7 @@ export async function runFinanceAgent({ businessId, days = 30, userMessage = nul
     }
   }
 
-  // 4. Build the system prompt for the Finance Agent
+  // 5. Build the system prompt for the Finance Agent
   const systemPrompt = `You are the Finance Agent for "${business.name}", an AI-operated print-on-demand business on Podilot.
 
 WORKFLOW — follow these steps in order, no skipping:
@@ -132,7 +187,7 @@ FINAL RESPONSE FORMAT:
 
 You are READ-ONLY. Produce analysis only — do not attempt to modify listings or execute actions.`;
 
-  // 5. Run the agentic tool-calling loop
+  // 6. Run the agentic tool-calling loop
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
     {
@@ -172,8 +227,8 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
       console.log(`[Finance Agent] Calling tool: ${name}`);
       const result = await executeTool(name, args);
 
-      if (name === 'calculateProfitMetrics') finalMetrics = result;
-      if (name === 'detectAnomalies') finalSignals = result;
+      if (name === 'calculateProfitMetrics') finalMetrics = result as Metrics;
+      if (name === 'detectAnomalies') finalSignals = result as DetectAnomaliesResult;
 
       messages.push({
         role: 'tool',
@@ -183,7 +238,7 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
     }
   }
 
-  // 6. Save snapshot to Supabase
+  // 7. Save snapshot to Supabase
   if (toolState.metrics) {
     const today = new Date().toISOString().split('T')[0];
     const upsertData: Record<string, unknown> = {
@@ -198,7 +253,7 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
 
     await supabase.from('finance_snapshots').upsert(upsertData, { onConflict: 'business_id, snapshot_date, period' });
 
-    // 7. Log to workflows table for the Orchestrator
+    // 8. Log to workflows table for the Orchestrator
     await supabase.from('workflows').insert({
       business_id: businessId,
       type: 'financial_analysis',
@@ -213,7 +268,11 @@ You are READ-ONLY. Produce analysis only — do not attempt to modify listings o
     });
 
     if (finalSignals?.signals && finalSignals.signals.length > 0) {
-       await handleFinanceSignals({ businessId, signals: finalSignals.signals, supabase });
+      await handleFinanceSignals({
+        businessId,
+        signals: finalSignals.signals as unknown as Record<string, unknown>[],
+        supabase,
+      });
     }
   }
 

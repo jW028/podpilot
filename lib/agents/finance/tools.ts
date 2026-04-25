@@ -1,62 +1,4 @@
-import type { ProductSignal as Signal, Alert } from '@/lib/types/workflow';
-
-// ─── Type Definitions ────────────────────────────────────────────────────────
-
-interface PrintifyLineItem {
-  product_id: string;
-  quantity: number;
-  cost?: number;
-  shipping_cost?: number;
-  metadata?: {
-    title?: string;
-    price?: number;
-  };
-}
-
-interface PrintifyOrder {
-  id: string;
-  created_at: string;
-  total_price: number;
-  line_items: PrintifyLineItem[];
-}
-
-interface PrintifyResponse {
-  data: PrintifyOrder[];
-  current_page: number;
-  last_page: number;
-}
-
-interface ProductMetric {
-  product_id: string;
-  title: string;
-  units_sold: number;
-  revenue: number;
-  cost: number;
-  profit: number;
-  margin_pct: string;
-}
-
-interface MetricsSummary {
-  total_orders: number;
-  total_revenue: string;
-  total_costs: string;
-  total_profit: string;
-  overall_margin_pct: string;
-}
-
-interface Metrics {
-  summary: MetricsSummary;
-  by_product: ProductMetric[];
-  note?: string;
-}
-
-interface ToolState {
-  orders?: PrintifyOrder[];
-  metrics?: Metrics;
-  signals?: Signal[];
-  alerts?: Alert[];
-}
-
+import type { ToolState, PrintifyOrder, PrintifyResponse, ProductMetric, Metrics, ProductSignal, Alert } from "@/lib/types";
 interface FetchPrintifyOrdersParams {
   printifyToken: string;
   shopId: string;
@@ -73,13 +15,6 @@ interface DetectAnomaliesParams {
 }
 
 // ─── Tool 1: Fetch Printify Orders ────────────────────────────────────────────
-// Fetches all fulfilled orders within a date range from Printify API.
-// The Finance Agent calls this first — it's the raw data source.
-
-// FIX #4: Added 200ms delay between pages to avoid Printify 429 rate-limit errors.
-// FIX #1 (partial): This function now returns a SLIM summary to GLM, not the raw orders.
-// The full orders array is stored in `toolState` (see financeAgent.js) for server-side use only.
-
 export async function fetchPrintifyOrders({
   printifyToken,
   shopId,
@@ -184,10 +119,6 @@ export async function fetchPrintifyOrders({
 }
 
 // ─── Tool 2: Calculate Profit Metrics ─────────────────────────────────────────
-// FIX #1: Now reads orders from toolState (server memory), not from GLM arguments.
-// GLM calls this with NO arguments — the server fills in the data from toolState.
-// This prevents hundreds of order objects from being serialized into GLM's context.
-
 export function calculateProfitMetrics({
   toolState,
 }: CalculateProfitMetricsParams): Metrics {
@@ -282,21 +213,13 @@ export function calculateProfitMetrics({
 }
 
 // ─── Tool 3: Detect Anomalies & Generate Signals ─────────────────────────────
-// FIX #1: Reads metrics from toolState, not from GLM arguments.
-// FIX #3: Demo-friendly thresholds — lowered so signals fire on realistic hackathon data.
-//         Thresholds are configurable via the DEMO_MODE env var.
-//
-// THRESHOLD TABLE (adjust to match your test data):
-//   reprice  : margin < 30%  (was 10% — too tight for demo)
-//   retire   : margin < 15%  (was 5%)
-//   boost    : margin > 35% AND units >= 1  (was 40%, units > 10 — too strict)
 
 export function detectAnomalies({ toolState }: DetectAnomaliesParams): {
-  signals: Signal[];
+  signals: ProductSignal[];
   alerts: Alert[];
   error?: string;
 } {
-  // FIX #1: Read from server memory
+
   const metrics = toolState?.metrics;
   if (!metrics)
     return {
@@ -305,7 +228,7 @@ export function detectAnomalies({ toolState }: DetectAnomaliesParams): {
       error: "metrics not computed yet — call calculateProfitMetrics first",
     };
 
-  const signals: Signal[] = [];
+  const signals: ProductSignal[] = [];
   const alerts: Alert[] = [];
 
   // FIX #3: Demo-friendly thresholds (environment-switchable)
@@ -394,9 +317,7 @@ export function detectAnomalies({ toolState }: DetectAnomaliesParams): {
 }
 
 // ─── Tool registry for GLM function calling ──────────────────────────────────
-// FIX #1: Tool definitions updated — calculateProfitMetrics and detectAnomalies
-// now take NO parameters from GLM. Data flows server-side via toolState.
-// GLM is told this explicitly in the description so it doesn't try to pass args.
+
 export const TOOL_DEFINITIONS = [
   {
     type: "function",
