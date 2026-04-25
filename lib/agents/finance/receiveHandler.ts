@@ -34,12 +34,6 @@ interface BusinessCreatedPayload {
   target_margin_percent?: number;
 }
 
-interface DesignCompletedPayload {
-  product_id: string;
-  product_title: string;
-  design_cost: number;
-  completed_at: string;
-}
 
 export interface ProcessIncomingMessagesResult {
   processed: number;
@@ -104,7 +98,7 @@ export async function processIncomingMessages(
             console.log(
               `[FinanceAgent:receive] Price updated for ${p.product_title}: RM ${p.old_price} → RM ${p.new_price}`
             );
-            // Sync new price to products.price
+
             if (p.product_id && p.new_price > 0) {
               const { error: priceErr } = await supabase
                 .from('products')
@@ -122,14 +116,43 @@ export async function processIncomingMessages(
 
           case 'refund_processed': {
             const p = row.payload as unknown as RefundProcessedPayload;
-            console.log(
-              `[FinanceAgent:receive] Refund of RM ${p.refund_amount} processed for ${p.product_title} (order ${p.order_id})`
-            );
-            if (p.reason === 'damaged' || p.reason === 'wrong item') {
-              console.warn(
-                `[FinanceAgent:receive] WARNING: refund reason "${p.reason}" for ${p.product_title} — product quality should be reviewed`
-              );
+            const isFlagged = p.reason === 'damaged' || p.reason === 'wrong item';
+
+            const { data: snapshot } = await supabase
+              .from('finance_snapshots')
+              .select('id, signals')
+              .eq('business_id', row.business_id)
+              .order('snapshot_date', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (snapshot) {
+              const existing = (snapshot.signals as Record<string, unknown> & { refunds?: unknown[] }) ?? {};
+              const refunds: unknown[] = Array.isArray(existing.refunds) ? existing.refunds : [];
+              refunds.push({
+                order_id: p.order_id,
+                product_id: p.product_id,
+                product_title: p.product_title,
+                refund_amount: p.refund_amount,
+                reason: p.reason,
+                refunded_at: p.refunded_at,
+                flagged: isFlagged,
+              });
+
+              await supabase
+                .from('finance_snapshots')
+                .update({ signals: { ...existing, refunds } })
+                .eq('id', snapshot.id);
+
+              if (isFlagged) {
+                console.warn(`[FinanceAgent:receive] Flagged refund recorded for ${p.product_title} — reason: ${p.reason}`);
+              } else {
+                console.log(`[FinanceAgent:receive] Appended refund RM ${p.refund_amount} to snapshot signals`);
+              }
+            } else {
+              console.warn(`[FinanceAgent:receive] No snapshot found for business ${row.business_id}, refund not recorded`);
             }
+
             break;
           }
 
@@ -170,14 +193,6 @@ export async function processIncomingMessages(
                 );
               }
             }
-            break;
-          }
-
-          case 'design_completed': {
-            const p = row.payload as unknown as DesignCompletedPayload;
-            console.log(
-              `[FinanceAgent:receive] Design completed for ${p.product_title}, design cost: RM ${p.design_cost}`
-            );
             break;
           }
 
