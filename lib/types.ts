@@ -3,6 +3,7 @@ export type {
   SuggestedPrices,
   PricingDecision,
   PrintifyResult,
+  DesignToLaunchPayload,
 } from "./types/index";
 
 export type {

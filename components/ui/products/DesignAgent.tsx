@@ -5,6 +5,24 @@ import { HiOutlineRefresh } from "react-icons/hi";
 import { IoSparkles } from "react-icons/io5";
 import { RiSendPlaneFill } from "react-icons/ri";
 import { MdCheckCircle, MdSwapHoriz, MdTrendingUp } from "react-icons/md";
+import { FiLoader } from "react-icons/fi";
+import type { DesignToLaunchPayload } from "@/lib/types";
+
+const CATEGORY_KW: [string, string[]][] = [
+  ["hoodie",     ["hoodie", "sweatshirt", "pullover", "zip-up", "zip up"]],
+  ["tshirt",     ["t-shirt", "tshirt", "tee", "crew neck"]],
+  ["longsleeve", ["long sleeve", "longsleeve", "long-sleeve"]],
+  ["mug",        ["mug", "cup", "tumbler"]],
+  ["poster",     ["poster", "print", "canvas", "wall art"]],
+  ["hat",        ["hat", "cap", "beanie"]],
+  ["bag",        ["bag", "tote", "backpack"]],
+];
+
+function inferCategories(text: string): string[] {
+  const lower = (text ?? "").toLowerCase();
+  const matched = CATEGORY_KW.filter(([, kws]) => kws.some((kw) => lower.includes(kw))).map(([cat]) => cat);
+  return matched.length > 0 ? matched : [lower.replace(/[^a-z0-9]+/g, "_").slice(0, 30) || "product"];
+}
 
 interface ChatMessage {
   role: "assistant" | "user";
@@ -40,6 +58,7 @@ interface DesignAgentProps {
   onProductSelect?: (blueprintId: string, productType: string) => void;
   onFieldUpdate?: (fieldName: string, value: unknown) => void;
   onConfirm?: () => Promise<void>;
+  onLaunch?: (payload: DesignToLaunchPayload) => Promise<void>;
 }
 
 const STORAGE_KEY = (businessId: string, productId: string) =>
@@ -56,12 +75,16 @@ const DesignAgent = ({
   onProductSelect,
   onFieldUpdate,
   onConfirm,
+  onLaunch,
 }: DesignAgentProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [launchStatus, setLaunchStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [accumulatedSuggestions, setAccumulatedSuggestions] = useState<FieldSuggestion[]>([]);
   const [blueprintSuggestions, setBlueprintSuggestions] = useState<
     BlueprintSuggestion[]
   >([]);
@@ -207,6 +230,16 @@ const DesignAgent = ({
             locked: suggestion.locked || false,
           });
         });
+        // Accumulate for launch payload — later suggestions overwrite earlier ones per field
+        setAccumulatedSuggestions((prev) => {
+          const merged = [...prev];
+          data.fieldSuggestions!.forEach((f) => {
+            const idx = merged.findIndex((m) => m.fieldName === f.fieldName);
+            if (idx >= 0) merged[idx] = f;
+            else merged.push(f);
+          });
+          return merged;
+        });
       }
 
       // Handle blueprint suggestions (3 real Printify product types)
@@ -262,7 +295,44 @@ const DesignAgent = ({
       setBlueprintSuggestions([]);
       setSelectedBlueprint(null);
       setMarketTrends(null);
+      setAccumulatedSuggestions([]);
+      setLaunchStatus(null);
       localStorage.removeItem(STORAGE_KEY(businessId, productId));
+    }
+  };
+
+  const hasPrices = accumulatedSuggestions.some((f) => f.fieldName.startsWith("price_") && typeof f.value === "number");
+
+  const handleLaunch = async () => {
+    if (!selectedBlueprint || !onLaunch) return;
+    setIsLaunching(true);
+    setLaunchStatus(null);
+    try {
+      const res = await fetch(`/api/business/${businessId}/products/design`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "finalize",
+          messages,
+          productContext: { title: productTitle, description: productDescription },
+          businessContext: { name: businessName, niche: businessNiche },
+          finalizePayload: {
+            blueprintId: parseInt(selectedBlueprint.id, 10),
+            fieldSuggestions: accumulatedSuggestions,
+            categories: inferCategories(selectedBlueprint.title),
+          },
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message || "Finalize failed");
+      const launchPayload: DesignToLaunchPayload = json.data?.launchPayload;
+      if (!launchPayload) throw new Error("No launch payload returned");
+      await onLaunch(launchPayload);
+      setLaunchStatus({ ok: true, msg: "Launched! Check the launch panel for status." });
+    } catch (err) {
+      setLaunchStatus({ ok: false, msg: err instanceof Error ? err.message : "Launch failed" });
+    } finally {
+      setIsLaunching(false);
     }
   };
 
@@ -444,20 +514,36 @@ const DesignAgent = ({
         </div>
       </div>
 
-      {/* ── Confirm Button ──────────────────────────────────── */}
-      {isDraft && selectedBlueprint && onConfirm && (
-        <div className="px-5 pb-5 pt-0 flex-shrink-0">
-          <button
-            className="w-full px-4 py-2.5 bg-primary-500 text-dark rounded-xl font-semibold text-xs hover:bg-primary-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-            onClick={handleConfirm}
-            disabled={isConfirming || isLoading}
-          >
-            <IoSparkles className="text-sm" />
-            {isConfirming ? "Confirming..." : "Confirm & Mark Ready"}
-          </button>
-          <p className="text-[10px] text-neutral-600 mt-2 text-center">
-            Saves the product and sets status to ready for launch.
-          </p>
+      {/* ── Confirm + Launch Buttons ────────────────────────── */}
+      {isDraft && selectedBlueprint && (
+        <div className="px-5 pb-5 pt-0 flex-shrink-0 space-y-2">
+          {launchStatus && (
+            <p className={`text-[10px] text-center px-1 ${launchStatus.ok ? "text-primary-400" : "text-red-400"}`}>
+              {launchStatus.msg}
+            </p>
+          )}
+          {onLaunch && (
+            <button
+              className="w-full px-4 py-2.5 bg-primary-500 text-dark rounded-xl font-semibold text-xs hover:bg-primary-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              onClick={handleLaunch}
+              disabled={isLaunching || isLoading}
+            >
+              {isLaunching ? (
+                <><FiLoader className="animate-spin text-sm" /> Launching…</>
+              ) : (
+                <><IoSparkles className="text-sm" /> {hasPrices ? "Launch with Design Prices" : "Launch Product"}</>
+              )}
+            </button>
+          )}
+          {onConfirm && (
+            <button
+              className="w-full px-4 py-2.5 bg-neutral-800 text-neutral-300 rounded-xl font-semibold text-xs hover:bg-neutral-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              onClick={handleConfirm}
+              disabled={isConfirming || isLoading}
+            >
+              {isConfirming ? "Confirming..." : "Mark Ready (no launch)"}
+            </button>
+          )}
         </div>
       )}
     </div>

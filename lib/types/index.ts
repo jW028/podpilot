@@ -3,7 +3,8 @@ export type {
   SuggestedPrices,
   PricingDecision,
   PrintifyResult,
-} from "./launch";
+  DesignToLaunchPayload,
+} from './launch';
 
 export type {
   Product,
@@ -20,3 +21,15 @@ export type {
   CreateBusinessInput,
   UpdateBusinessInput,
 } from "./business";
+
+
+export type {
+  WorkflowRow,
+  WorkflowState,
+  WorkflowType,
+  ProductSignalAction,
+  ProductSignal,
+  Alert,
+  AgentName,
+  HandlerResult,
+} from "./workflow";

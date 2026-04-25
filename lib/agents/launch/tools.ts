@@ -13,6 +13,31 @@ type TavilySearchResult = {
 };
 
 const printifyBase = "https://api.printify.com/v1";
+
+const CATEGORY_KEYWORDS: [string, string[]][] = [
+  ["hoodie",  ["hoodie", "sweatshirt", "pullover", "zip-up", "zip up"]],
+  ["tshirt",  ["t-shirt", "tshirt", "tee", "unisex tee", "crew neck tee"]],
+  ["longsleeve", ["long sleeve", "longsleeve", "long-sleeve"]],
+  ["mug",     ["mug", "cup", "tumbler", "drinkware"]],
+  ["poster",  ["poster", "print", "canvas", "art print", "wall art"]],
+  ["hat",     ["hat", "cap", "beanie", "snapback", "dad hat"]],
+  ["bag",     ["bag", "tote", "backpack", "drawstring"]],
+  ["phone",   ["phone case", "iphone", "samsung"]],
+  ["sticker", ["sticker", "decal"]],
+];
+
+/** Derive product category names from a product type string or title. */
+export function inferCategories(text: string): string[] {
+  if (!text) return ["product"];
+  const lower = text.toLowerCase();
+  const matched: string[] = [];
+  for (const [cat, keywords] of CATEGORY_KEYWORDS) {
+    if (keywords.some((kw) => lower.includes(kw))) {
+      matched.push(cat);
+    }
+  }
+  return matched.length > 0 ? matched : [lower.replace(/[^a-z0-9]+/g, "_").slice(0, 30)];
+}
 const defaultSafetyInformation =
   "GPSR information: John Doe, test@example.com, 123 Main St, Apt 1, New York, NY, 10001, US Product information: Gildan, 5000, 2 year warranty in EU and UK as per Directive 1999/44/EC Warnings, Hazard: No warranty, US Care instructions: Machine wash: warm (max 40C or 105F), Non-chlorine: bleach as needed, Tumble dry: medium, Do not iron, Do not dryclean";
 
@@ -188,19 +213,63 @@ function parseVariantIds(
   return parsed.length > 0 ? parsed : fallback;
 }
 
+async function fetchVariantIds(
+  token: string,
+  blueprintId: number,
+  printProviderId: number,
+): Promise<number[]> {
+  try {
+    const data = await printifyRequest<{
+      variants?: Array<{ id: number; is_available?: boolean }>;
+    }>(
+      "GET",
+      `/catalog/blueprints/${blueprintId}/print_providers/${printProviderId}/variants.json`,
+      token,
+    );
+    const available = (data.variants ?? [])
+      .filter((v) => v.is_available !== false)
+      .slice(0, 4)
+      .map((v) => v.id);
+    if (available.length > 0) {
+      console.log(`Fetched ${available.length} variants for blueprint ${blueprintId}:`, available);
+      return available;
+    }
+  } catch (e) {
+    console.warn("Failed to fetch variants from Printify catalog:", e);
+  }
+  return [45740, 45742, 45744, 45746];
+}
+
 async function uploadPlaceholderImageToPrintify(
   token: string,
 ): Promise<string> {
+  // 1. Pre-uploaded image ID (fastest — set once from Printify dashboard)
   if (process.env.PRINTIFY_IMAGE_ID) {
-    console.log("Using PRINTIFY_IMAGE_ID from env, skipping upload.");
+    console.log("Using PRINTIFY_IMAGE_ID from env.");
     return process.env.PRINTIFY_IMAGE_ID;
   }
 
+  // 2. URL-based upload (no file system required — works in serverless)
+  const imageUrl = process.env.PRINTIFY_IMAGE_URL;
+  if (imageUrl) {
+    console.log(`Uploading image via URL: ${imageUrl}`);
+    const data = await printifyRequest<{ id?: string | number }>(
+      "POST",
+      "/uploads/images.json",
+      token,
+      { file_name: "placeholder.png", url: imageUrl },
+    );
+    const uploadId = data?.id;
+    if (!uploadId) throw new Error("Printify upload response missing image id.");
+    return String(uploadId);
+  }
+
+  // 3. Local file upload (dev only)
   const imagePath =
     process.env.PRINTIFY_PLACEHOLDER_IMAGE ||
     "assets/printify-placeholders/image.png";
   const absoluteImagePath = resolve(process.cwd(), imagePath);
-  console.log(`Uploading placeholder image: ${absoluteImagePath}`);
+  console.log(`Uploading placeholder image from file: ${absoluteImagePath}`);
   const fileBuffer = await readFile(absoluteImagePath);
   const fileName = basename(absoluteImagePath);
   const base64Contents = fileBuffer.toString("base64");
@@ -238,22 +307,33 @@ export async function createPrintifyProduct({
   prices,
   printifyToken,
   shopId,
+  blueprintId: blueprintIdOverride,
+  printProviderId: printProviderIdOverride,
+  variantIds: variantIdsOverride,
+  designImageBase64,
+  designImageFileName,
 }: {
   productData: LaunchProductInput;
   prices: SuggestedPrices;
   printifyToken: string;
   shopId: string;
+  blueprintId?: number;
+  printProviderId?: number;
+  variantIds?: number[];
+  designImageBase64?: string;
+  designImageFileName?: string;
 }): Promise<PrintifyResult> {
   if (!printifyToken || !shopId) {
     console.log("⚠️ No Printify credentials → returning mock");
     return mockPrintifyCreation(productData, prices);
   }
 
-  const blueprintId = Number(process.env.PRINTIFY_BLUEPRINT_ID || 384);
-  const printProviderId = Number(process.env.PRINTIFY_PROVIDER_ID || 1);
-  const variantIds = parseVariantIds(
-    process.env.PRINTIFY_VARIANT_IDS,
-    [45740, 45742, 45744, 45746],
+  const blueprintId = blueprintIdOverride ?? Number(process.env.PRINTIFY_BLUEPRINT_ID || 384);
+  const printProviderId = printProviderIdOverride ?? Number(process.env.PRINTIFY_PROVIDER_ID || 1);
+  const variantIds = variantIdsOverride ?? (
+    process.env.PRINTIFY_VARIANT_IDS
+      ? parseVariantIds(process.env.PRINTIFY_VARIANT_IDS, [45740, 45742, 45744, 45746])
+      : await fetchVariantIds(printifyToken, blueprintId, printProviderId)
   );
 
   try {
@@ -262,7 +342,23 @@ export async function createPrintifyProduct({
       printProviderId,
       variantIds,
     });
-    const designImageId = await uploadPlaceholderImageToPrintify(printifyToken);
+
+    // Use product's own design image if provided, otherwise fall back to placeholder
+    let designImageId: string;
+    if (designImageBase64 && designImageFileName) {
+      console.log(`Uploading product design image: ${designImageFileName}`);
+      const data = await printifyRequest<{ id?: string | number }>(
+        "POST",
+        "/uploads/images.json",
+        printifyToken,
+        { file_name: designImageFileName, contents: designImageBase64 },
+      );
+      const uploadId = data?.id;
+      if (!uploadId) throw new Error("Printify upload response missing image id.");
+      designImageId = String(uploadId);
+    } else {
+      designImageId = await uploadPlaceholderImageToPrintify(printifyToken);
+    }
     console.log(`Design image ID: ${designImageId}`);
 
     const basePrice =

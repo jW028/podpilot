@@ -31,3 +31,15 @@ export type PrintifyResult = {
   external_product_id?: string;
   [key: string]: unknown;
 };
+
+export type DesignToLaunchPayload = {
+  productName: string;
+  description: string;
+  blueprintId: number;
+  printProviderId?: number;
+  variantIds?: number[];
+  prices: Record<string, number>;
+  pricingReasoning?: string;
+  tags?: string[];
+  categories: string[];
+};
