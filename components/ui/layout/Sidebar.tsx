@@ -125,8 +125,10 @@ const SYSTEM_NAV: NavItem[] = [
 const Sidebar = ({ businessId }: SidebarProps = {}) => {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
-  
-  const [businesses, setBusinesses] = useState<{id: string, name: string}[]>([]);
+
+  const [businesses, setBusinesses] = useState<{ id: string; name: string }[]>(
+    [],
+  );
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -147,7 +149,10 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsDropdownOpen(false);
       }
     };
@@ -155,8 +160,10 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const currentBusiness = businesses.find((b) => b.id === businessId) || businesses[0];
-  const businessName = currentBusiness?.name || (businessId ? "Loading..." : "Select Business");
+  const currentBusiness =
+    businesses.find((b) => b.id === businessId) || businesses[0];
+  const businessName =
+    currentBusiness?.name || (businessId ? "Loading..." : "Select Business");
   const businessInitials = currentBusiness?.name
     ? currentBusiness.name.slice(0, 2).toUpperCase()
     : "??";
@@ -228,16 +235,23 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
       <div className={sidebarStyles.header}>
         <Logo />
       </div>
-      <div className={`${sidebarStyles.businessSwitcher} relative`} ref={dropdownRef}>
-        <button 
+      <div
+        className={`${sidebarStyles.businessSwitcher} relative`}
+        ref={dropdownRef}
+      >
+        <button
           className="w-full text-left"
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
         >
           <div className={sidebarStyles.businessPill}>
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className={sidebarStyles.businessAvatar}>{businessInitials}</div>
+              <div className={sidebarStyles.businessAvatar}>
+                {businessInitials}
+              </div>
               <div className="flex flex-col gap-1 min-w-0">
-                <div className={`${sidebarStyles.businessName} truncate`}>{businessName}</div>
+                <div className={`${sidebarStyles.businessName} truncate`}>
+                  {businessName}
+                </div>
                 <div className={sidebarStyles.businessSubtext}>
                   {numberOfActiveAgents} agents active
                 </div>
@@ -265,7 +279,9 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
           <div className="absolute top-full left-3 right-3 mt-1 bg-white border border-neutral-200 rounded-xl shadow-lg z-50 overflow-hidden">
             <div className="p-1 max-h-48 overflow-y-auto">
               {businesses.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-neutral-500 text-center">Loading...</div>
+                <div className="px-3 py-2 text-xs text-neutral-500 text-center">
+                  Loading...
+                </div>
               ) : (
                 businesses.map((b) => (
                   <Link
@@ -317,7 +333,7 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
       {/* User footer */}
       <div className={sidebarStyles.userFooter}>
         {/* profile btn */}
-        <Link href={"/profile"} className={sidebarStyles.userRow}>
+        <div className={sidebarStyles.userRow}>
           <div className="flex items-center gap-2.5">
             <div className={sidebarStyles.userAvatar}>{initials}</div>
             <div className={sidebarStyles.userInfo}>
@@ -325,7 +341,7 @@ const Sidebar = ({ businessId }: SidebarProps = {}) => {
               <div className={sidebarStyles.userEmail}>{user?.email}</div>
             </div>
           </div>
-        </Link>
+        </div>
 
         {/* logout btn */}
         <Button

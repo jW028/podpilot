@@ -345,12 +345,14 @@ export async function POST(
     }
 
     const apiKey = process.env.GLM_API_KEY;
-    const model = process.env.GLM_MODEL!;
-    const baseUrl = process.env.ILMU_BASE_URL!;
+    const model = process.env.GLM_MODEL || "ilmu-glm-5.1";
+    const baseUrl = process.env.ILMU_BASE_URL || "https://api.ilmu.ai/v1";
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
-    if (!apiKey || !model || !baseUrl) {
+    if (!geminiApiKey) {
       return NextResponse.json(
-        { success: false, message: "Missing GLM API configuration." },
+        { success: false, message: "Missing GEMINI API configuration." },
         { status: 500 },
       );
     }
@@ -459,45 +461,65 @@ Be conversational and concise. When the user first describes their idea, referen
       })),
     ];
 
-    const response = await fetch(
-      `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
+    let response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${geminiApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model,
+          model: geminiModel,
           temperature: 0.7,
+          response_format: { type: "json_object" },
           messages: messagesForModel,
         }),
       },
     );
 
-    if (!response.ok) {
-      // If LLM fails, still return blueprint suggestions
-      return NextResponse.json(
-        {
-          success: true,
-          data: {
-            ...fallbackPayload,
-            blueprintSuggestions:
-              blueprintSuggestions.length > 0
-                ? blueprintSuggestions
-                : undefined,
-            marketTrends,
-          },
-          message: "Model unavailable. Returning fallback guidance.",
-        },
-        { status: 200 },
+    let content: string | undefined;
+
+    if (response.ok) {
+      const completion = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      content = completion.choices?.[0]?.message?.content;
+    } else {
+      console.warn(
+        `[design/route] Gemini returned non-ok status: ${response.status} ${response.statusText}`,
       );
     }
 
-    const completion = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = completion.choices?.[0]?.message?.content;
+    if (!response.ok || !content) {
+      console.warn("[design/route] Gemini failed or returned empty. Attempting transparent GLM fallback...");
+      if (apiKey) {
+        response = await fetch(
+          `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model,
+              temperature: 0.7,
+              messages: messagesForModel,
+            }),
+          }
+        );
+        if (response.ok) {
+          const completion = (await response.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+          };
+          content = completion.choices?.[0]?.message?.content;
+          console.log("[design/route] Successfully recovered using GLM fallback.");
+        } else {
+          console.error(`[design/route] GLM fallback failed: ${response.status} ${response.statusText}`);
+        }
+      }
+    }
 
     if (!content) {
       return NextResponse.json(
