@@ -220,6 +220,25 @@ export async function POST(request: Request) {
       );
     }
 
+    // ── Mark any pipeline business_agent task as processed ────────────────────
+    // This unblocks the next step in the chain (e.g. design_agent)
+    await serviceClient
+      .from('workflows')
+      .update({
+        state: 'processed',
+        processed_at: new Date().toISOString(),
+        result: {
+          niche: framework.niche,
+          theme: framework.theme,
+          businessName: input.businessName || framework.theme,
+          businessId,
+        },
+      })
+      .eq('business_id', businessId)
+      .eq('target_agent', 'business_agent')
+      .eq('type', 'agent_pipeline_task')
+      .eq('state', 'awaiting_approval');
+
     // ── Finance agent event: business_created ──────────────────────────────────
     // Non-blocking: a failure here should not interrupt the user's confirm flow.
     const { error: financeEventError } = await serviceClient

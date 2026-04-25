@@ -9,6 +9,8 @@ export type WorkflowRow = {
   payload: Record<string, unknown>;
   state: WorkflowState;
   error_message: string | null;
+  result: Record<string, unknown> | null;
+  depends_on: string | null;
   created_at: string;
   processed_at: string | null;
 };
@@ -18,7 +20,8 @@ export type WorkflowType =
   | 'inter_agent_signal'
   | 'business_creation'
   | 'product_launch_publish'
-  | 'design_to_launch';
+  | 'design_to_launch'
+  | 'agent_pipeline_task';
 
 export type ProductSignalAction = 'reprice' | 'retire' | 'boost';
 
@@ -45,10 +48,11 @@ export type AgentName =
   | 'launch_agent'
   | 'design_agent'
   | 'product_agent'
-  | 'customer_service_agent';
+  | 'customer_service_agent'
+  | 'business_agent';
 
 export type HandlerResult =
   | { status: 'completed'; data?: Record<string, unknown> }
+  | { status: 'waiting' }
   | { status: 'skipped'; reason: string }
   | { status: 'failed'; error: string };
-

@@ -28,14 +28,10 @@ const ProductsPage = ({
       const response = await fetch(`/api/business/${businessId}/products`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: "Untitled Product",
-        }),
+        body: JSON.stringify({ title: "Untitled Product" }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to create product");
-      }
+      if (!response.ok) throw new Error("Failed to create product");
 
       const newProduct = (await response.json()) as Product;
       const dest = designPrompt
@@ -47,7 +43,7 @@ const ProductsPage = ({
     }
   };
 
-  // Auto-create a product when arriving from the orchestrator with a design prompt
+  // Auto-create when arriving from orchestrator with a design prompt
   useEffect(() => {
     const prompt = searchParams?.get("designPrompt");
     if (!prompt || autoCreateFired.current) return;
