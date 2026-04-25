@@ -141,7 +141,7 @@ export async function runCustomerServiceAgent(input: {
       issueDescription: customerMessage.trim(),
     };
 
-    // Simple inquiry — no order follow-up needed
+    // Simple inquiry — reply but stay in greeting so user can keep chatting
     if (classification === "none") {
       const llm = await generateReply(`The customer asked: "${customerMessage}". Reply helpfully and concisely. This is a general inquiry that doesn't need order lookup.`);
       const aiReply = llm || `Thanks for reaching out! I'd be happy to help. Could you tell me a bit more about what you need?`;
@@ -150,7 +150,7 @@ export async function runCustomerServiceAgent(input: {
         aiReply,
         ticketCreated: false,
         ticket: null,
-        conversationState: { ...state, phase: "resolved" },
+        conversationState: { ...state, phase: "greeting" },
       };
     }
 
