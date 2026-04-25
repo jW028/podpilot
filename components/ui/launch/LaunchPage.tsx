@@ -9,9 +9,12 @@ import {
   FiCircle,
   FiExternalLink,
   FiLoader,
+  FiPackage,
 } from "react-icons/fi";
+import { IoSparkles } from "react-icons/io5";
 import Button from "@/components/ui/shared/Button";
 import { useLaunchAgent } from "@/hooks/useLaunchAgent";
+import type { Product, DesignToLaunchPayload } from "@/lib/types";
 
 interface LaunchPageProps {
   businessId: string;
@@ -37,49 +40,120 @@ const supabaseClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
+const CATEGORY_KW: [string, string[]][] = [
+  ["hoodie",     ["hoodie", "sweatshirt", "pullover", "zip-up", "zip up"]],
+  ["tshirt",     ["t-shirt", "tshirt", "tee", "crew neck"]],
+  ["longsleeve", ["long sleeve", "longsleeve", "long-sleeve"]],
+  ["mug",        ["mug", "cup", "tumbler"]],
+  ["poster",     ["poster", "print", "canvas", "wall art"]],
+  ["hat",        ["hat", "cap", "beanie"]],
+  ["bag",        ["bag", "tote", "backpack"]],
+];
+
+function inferCategories(text: string): string[] {
+  const lower = (text ?? "").toLowerCase();
+  const matched = CATEGORY_KW.filter(([, kws]) => kws.some((kw) => lower.includes(kw))).map(([cat]) => cat);
+  return matched.length > 0 ? matched : [lower.replace(/[^a-z0-9]+/g, "_").slice(0, 30) || "product"];
+}
+
+/** Extract a DesignToLaunchPayload from a product's saved attributes */
+function extractDesignPayload(product: Product): DesignToLaunchPayload | undefined {
+  const attrs = product.attributes;
+  if (!attrs) return undefined;
+
+  const blueprintAttr = attrs["blueprint_id"];
+  const blueprintId = blueprintAttr?.value;
+  if (!blueprintId || typeof blueprintId !== "number") return undefined;
+
+  const prices: Record<string, number> = {};
+  Object.entries(attrs).forEach(([key, attr]) => {
+    if (key.startsWith("price_") && typeof attr?.value === "number") {
+      prices[key.replace("price_", "")] = attr.value as number;
+    }
+  });
+
+  const tagsAttr = attrs["tags"];
+  const tags = Array.isArray(tagsAttr?.value)
+    ? (tagsAttr.value as string[])
+    : undefined;
+
+  const pricingReasoning =
+    typeof attrs["pricing_reasoning"]?.value === "string"
+      ? (attrs["pricing_reasoning"].value as string)
+      : undefined;
+
+  const productTypeText =
+    typeof attrs["product_type"]?.value === "string"
+      ? (attrs["product_type"].value as string)
+      : product.title;
+
+  const printProviderAttr = attrs["print_provider_id"];
+  const printProviderId =
+    typeof printProviderAttr?.value === "number" ? printProviderAttr.value : undefined;
+
+  const variantIdsAttr = attrs["variant_ids"];
+  const variantIds =
+    typeof variantIdsAttr?.value === "string" && variantIdsAttr.value
+      ? variantIdsAttr.value
+          .split(",")
+          .map((v) => Number(v.trim()))
+          .filter((v) => Number.isInteger(v) && v > 0)
+      : Array.isArray(variantIdsAttr?.value)
+        ? (variantIdsAttr.value as unknown as number[])
+        : undefined;
+
+  return {
+    productName: product.title,
+    description: product.description ?? "",
+    blueprintId,
+    printProviderId,
+    variantIds,
+    prices,
+    pricingReasoning,
+    tags,
+    categories: inferCategories(productTypeText),
+  };
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  draft: "bg-amber-100 text-amber-700",
+  designing: "bg-blue-100 text-blue-700",
+  ready: "bg-emerald-100 text-emerald-700",
+  pushed: "bg-purple-100 text-purple-700",
+  published: "bg-green-100 text-green-700",
+  retired: "bg-gray-100 text-gray-500",
+};
+
 const LaunchPage = ({ businessId }: LaunchPageProps) => {
-  const { data, loading, error, runLaunch, setData, setError } =
+  const { data, loading: launching, error, runLaunch, setData, setError } =
     useLaunchAgent(businessId);
 
-  const storageKey = `launch-page-state:${businessId}`;
+  // ── Product list ─────────────────────────────────────────────────────────
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [categoriesInput, setCategoriesInput] = useState("hoodie, tshirt, mug");
-  const [tagsInput, setTagsInput] = useState("");
-  const [userMessage, setUserMessage] = useState("");
+  // ── Sales channels ────────────────────────────────────────────────────────
   const [channels, setChannels] = useState<SalesChannel[]>([]);
   const [selectedShopId, setSelectedShopId] = useState("");
 
+  // ── Polling ref ───────────────────────────────────────────────────────────
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch ready + designing products
   useEffect(() => {
-    const timer = setTimeout(() => {
-      try {
-        const saved = localStorage.getItem(storageKey);
-        if (!saved) return;
+    if (!businessId) return;
+    setProductsLoading(true);
+    fetch(`/api/business/${businessId}/products?status=ready`)
+      .then((r) => r.json())
+      .then((list: Product[]) => {
+        setProducts(Array.isArray(list) ? list : []);
+      })
+      .catch(() => setProducts([]))
+      .finally(() => setProductsLoading(false));
+  }, [businessId]);
 
-        const parsed = JSON.parse(saved) as {
-          name?: string;
-          description?: string;
-          categoriesInput?: string;
-          tagsInput?: string;
-          userMessage?: string;
-          selectedShopId?: string;
-        };
-
-        setName(parsed.name || "");
-        setDescription(parsed.description || "");
-        setCategoriesInput(parsed.categoriesInput || "hoodie, tshirt, mug");
-        setTagsInput(parsed.tagsInput || "");
-        setUserMessage(parsed.userMessage || "");
-        if (parsed.selectedShopId) setSelectedShopId(parsed.selectedShopId);
-      } catch {
-        // Ignore malformed local state and continue with defaults.
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [storageKey]);
-
-  // Fetch sales channels from Supabase, then sync from Printify if DB is empty
+  // Fetch sales channels
   useEffect(() => {
     if (!businessId) return;
     (async () => {
@@ -93,7 +167,6 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
           ? row.sales_channels
           : [];
 
-        // If no channels in DB, sync from Printify
         if (list.length === 0) {
           const res = await fetch("/api/agents/launch/channels", {
             method: "POST",
@@ -101,28 +174,23 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
             body: JSON.stringify({ businessId }),
           });
           const json = await res.json();
-          if (res.ok && json.channels) {
-            list = json.channels;
-          }
+          if (res.ok && json.channels) list = json.channels;
         }
 
         setChannels(list);
-        if (list.length > 0 && !selectedShopId) {
-          setSelectedShopId(list[0].shop_id);
-        }
+        if (list.length > 0) setSelectedShopId(list[0].shop_id);
       } catch {}
     })();
-  }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [businessId]);
 
-  // Poll product_launches for publish status after agent returns
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
+  // Poll product_launches for publish completion
   useEffect(() => {
-    const launchId = data?.launch_id;
+    const launchData = data as Record<string, unknown> | null;
+    const launchId = launchData?.launch_id as string | undefined;
     const isPublishing =
-      data &&
-      !data?.publish_result?.published &&
-      data?.publish_result?.publish_status === "publishing";
+      launchData &&
+      !(launchData?.publish_result as Record<string, unknown>)?.published &&
+      (launchData?.publish_result as Record<string, unknown>)?.publish_status === "publishing";
 
     if (!launchId || !isPublishing) {
       if (pollingRef.current) {
@@ -136,33 +204,29 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
       try {
         const { data: row } = await supabaseClient
           .from("product_launches")
-          .select("status, publish_status, external_product_id, launched_at")
+          .select("status, publish_status, external_product_id")
           .eq("id", launchId)
           .maybeSingle();
-
         if (!row) return;
 
         if (row.status === "published" || row.publish_status === "published") {
           setData({
-            ...data,
+            ...(launchData as object),
             publish_result: {
-              ...data.publish_result,
+              ...(launchData?.publish_result as object),
               published: true,
               publish_status: "published",
               external_product_id: row.external_product_id,
             },
           });
           if (pollingRef.current) clearInterval(pollingRef.current);
-        } else if (
-          row.status === "failed" ||
-          /fail|error|rejected/i.test(row.publish_status || "")
-        ) {
+        } else if (row.status === "failed" || /fail|error|rejected/i.test(row.publish_status ?? "")) {
           setData({
-            ...data,
+            ...(launchData as object),
             publish_result: {
-              ...data.publish_result,
+              ...(launchData?.publish_result as object),
               published: false,
-              publish_status: row.publish_status || "failed",
+              publish_status: row.publish_status ?? "failed",
             },
           });
           if (pollingRef.current) clearInterval(pollingRef.current);
@@ -173,225 +237,95 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [data, setData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data, setData]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          name,
-          description,
-          categoriesInput,
-          tagsInput,
-          userMessage,
-          selectedShopId,
-        }),
-      );
-    } catch {
-      // Ignore storage write failures.
-    }
-  }, [
-    categoriesInput,
-    description,
-    name,
-    selectedShopId,
-    storageKey,
-    tagsInput,
-    userMessage,
-  ]);
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const designPayload = selectedProduct
+    ? extractDesignPayload(selectedProduct)
+    : undefined;
 
-  const categories = useMemo(
-    () =>
-      categoriesInput
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    [categoriesInput],
-  );
+  const hasPrices =
+    designPayload && Object.keys(designPayload.prices).length > 0;
 
-  const tags = useMemo(
-    () =>
-      tagsInput
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    [tagsInput],
-  );
+  const canLaunch = !!selectedProduct && !launching;
 
-  const canSubmit =
-    name.trim().length > 0 &&
-    description.trim().length > 0 &&
-    categories.length > 0;
+  // ── Workflow steps ────────────────────────────────────────────────────────
+  const launchData = data as Record<string, unknown> | null;
 
   const workflowSteps = useMemo<WorkflowStep[]>(() => {
+    const researchTitle = hasPrices
+      ? "Pricing (from design agent)"
+      : "Market research & pricing";
+    const researchDetail = hasPrices
+      ? `Using design prices: ${Object.entries(designPayload!.prices)
+          .map(([k, v]) => `${k} RM${(v / 100).toFixed(0)}`)
+          .join(", ")}`
+      : "Fetching live market data to determine optimal prices.";
+
     if (error) {
       return [
-        {
-          key: "request",
-          title: "Launch request accepted",
-          detail: "Product payload sent from frontend to launch API.",
-          status: "done",
-        },
-        {
-          key: "research",
-          title: "Market research",
-          detail: "Research and pricing strategy failed before completion.",
-          status: "failed",
-        },
-        {
-          key: "create",
-          title: "Create Printify product",
-          detail: "Pending until research and pricing are successful.",
-          status: "pending",
-        },
-        {
-          key: "publish",
-          title: "Publish to sales channel",
-          detail: "Pending until product creation succeeds.",
-          status: "pending",
-        },
-        {
-          key: "summary",
-          title: "Final summary",
-          detail: "Agent summary unavailable because launch failed.",
-          status: "pending",
-        },
+        { key: "request", title: "Launch request accepted", detail: "Payload sent to launch API.", status: "done" },
+        { key: "research", title: researchTitle, detail: "Failed before completion.", status: "failed" },
+        { key: "create", title: "Create Printify product", detail: "Pending.", status: "pending" },
+        { key: "publish", title: "Publish to sales channel", detail: "Pending.", status: "pending" },
       ];
     }
 
-    if (loading) {
+    if (launching) {
       return [
-        {
-          key: "request",
-          title: "Launch request accepted",
-          detail: "Request received and workflow initialized.",
-          status: "done",
-        },
-        {
-          key: "research",
-          title: "Market research",
-          detail: "Analyzing market data and deciding profitable prices.",
-          status: "running",
-        },
-        {
-          key: "create",
-          title: "Create Printify product",
-          detail: "Waiting for pricing output from research phase.",
-          status: "pending",
-        },
-        {
-          key: "publish",
-          title: "Publish to sales channel",
-          detail: "Will run after product creation returns product ID.",
-          status: "pending",
-        },
-        {
-          key: "summary",
-          title: "Final summary",
-          detail: "Will be generated after all tool calls complete.",
-          status: "pending",
-        },
+        { key: "request", title: "Launch request accepted", detail: "Workflow initialised.", status: "done" },
+        { key: "research", title: researchTitle, detail: hasPrices ? researchDetail : "Analysing market data…", status: hasPrices ? "done" : "running" },
+        { key: "create", title: "Create Printify product", detail: "Waiting for pricing.", status: hasPrices ? "running" : "pending" },
+        { key: "publish", title: "Publish to sales channel", detail: "Waiting for product ID.", status: "pending" },
       ];
     }
 
-    const hasPriceData =
-      !!data?.optimal_prices &&
-      Object.keys(data?.optimal_prices || {}).length > 0;
-    const hasPrintifyProduct = !!data?.printify_result?.product_id;
-    const published = !!data?.publish_result?.published;
-    const publishInProgress =
-      data?.publish_result?.publish_status === "publishing";
-    const hasSummary = !!(
-      data?.final_message && String(data.final_message).trim().length > 0
-    );
+    const hasPriceData = !!launchData?.optimal_prices && Object.keys((launchData.optimal_prices as object) ?? {}).length > 0;
+    const hasPrintifyProduct = !!(launchData?.printify_result as Record<string, unknown>)?.product_id;
+    const published = !!(launchData?.publish_result as Record<string, unknown>)?.published;
+    const publishInProgress = (launchData?.publish_result as Record<string, unknown>)?.publish_status === "publishing";
 
     return [
-      {
-        key: "request",
-        title: "Launch request accepted",
-        detail: "Launch workflow started and launch ID generated.",
-        status: data ? "done" : "pending",
-      },
-      {
-        key: "research",
-        title: "Market research",
-        detail: hasPriceData
-          ? "Pricing model completed with suggested prices."
-          : "No pricing output returned by the agent.",
-        status: hasPriceData ? "done" : "pending",
-      },
-      {
-        key: "create",
-        title: "Create Printify product",
-        detail: hasPrintifyProduct
-          ? "Printify product was created successfully."
-          : "No Printify product ID returned.",
-        status: hasPrintifyProduct ? "done" : "pending",
-      },
-      {
-        key: "publish",
-        title: "Publish to sales channel",
-        detail: published
-          ? "Product is published and ready on connected sales channel."
-          : publishInProgress
-            ? "Printify accepted publish request and is still processing."
-            : "Product was created but publish has not completed.",
-        status: published ? "done" : publishInProgress ? "running" : "pending",
-      },
-      {
-        key: "summary",
-        title: "Final summary",
-        detail: hasSummary
-          ? "Agent generated final launch summary."
-          : "No final summary text was returned.",
-        status: hasSummary ? "done" : "pending",
-      },
+      { key: "request", title: "Launch request accepted", detail: "Launch ID generated.", status: launchData ? "done" : "pending" },
+      { key: "research", title: researchTitle, detail: hasPriceData ? "Pricing complete." : researchDetail, status: hasPriceData ? "done" : "pending" },
+      { key: "create", title: "Create Printify product", detail: hasPrintifyProduct ? "Product created on Printify." : "Waiting.", status: hasPrintifyProduct ? "done" : "pending" },
+      { key: "publish", title: "Publish to sales channel", detail: published ? "Published and live." : publishInProgress ? "Publishing in progress…" : "Waiting.", status: published ? "done" : publishInProgress ? "running" : "pending" },
     ];
-  }, [data, error, loading]);
+  }, [data, error, launching, hasPrices, designPayload]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const completedSteps = workflowSteps.filter(
-    (step) => step.status === "done",
-  ).length;
+  const completedSteps = workflowSteps.filter((s) => s.status === "done").length;
   const progressPct = Math.round((completedSteps / workflowSteps.length) * 100);
 
-  const handleLaunch = async () => {
-    if (!canSubmit || loading) return;
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleSelectProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setData(null);
+    setError(null);
+  };
 
+  const handleLaunch = async () => {
+    if (!canLaunch || !selectedProduct) return;
     await runLaunch({
+      productId: selectedProduct.id,
       productData: {
-        name: name.trim(),
-        description: description.trim(),
-        categories,
-        ...(tags.length > 0 ? { tags } : {}),
+        name: selectedProduct.title,
+        description: selectedProduct.description ?? "",
+        categories: designPayload?.categories ?? inferCategories(selectedProduct.title),
+        tags: designPayload?.tags,
       },
       shopId: selectedShopId || undefined,
-      userMessage: userMessage.trim() || null,
+      designPayload,
     });
   };
 
-  const handleReset = () => {
-    setName("");
-    setDescription("");
-    setCategoriesInput("hoodie, tshirt, mug");
-    setTagsInput("");
-    setUserMessage("");
-    setData(null);
-    setError(null);
-    localStorage.removeItem(storageKey);
-  };
-
   return (
-    <section className="max-w-6xl mx-auto space-y-6 p-8">
+    <section className="max-w-7xl mx-auto p-8 space-y-6">
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-dark">
-            Launch Agent
-          </h1>
-          <p className="text-sm text-neutral-500 mt-2 max-w-2xl">
-            Launch a product to Printify from one guided form. This is
-            single-run mode for now, and will be reused later for automatic
-            launch after design approval.
+          <h1 className="font-serif text-3xl font-bold text-dark">Launch Agent</h1>
+          <p className="text-sm text-neutral-500 mt-1 max-w-xl">
+            Select a ready product, choose a sales channel, and publish to Printify.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -399,15 +333,13 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
             href={`/business/${businessId}/launch/channels`}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-neutral-300 text-neutral-600 hover:bg-light transition-colors text-sm"
           >
-            Sales Channels
-            <FiExternalLink size={14} />
+            Sales Channels <FiExternalLink size={13} />
           </Link>
           <Link
             href={`/business/${businessId}/launch/credentials`}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-neutral-300 text-neutral-600 hover:bg-light transition-colors text-sm"
           >
-            Setup Credentials Guide
-            <FiExternalLink size={14} />
+            Credentials <FiExternalLink size={13} />
           </Link>
         </div>
       </div>
@@ -418,61 +350,104 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="rounded-xl border border-neutral-300 bg-light p-5 space-y-4">
-          <h2 className="font-serif text-xl text-dark">Launch Input</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-5 items-start">
+        {/* ── Left: product list ─────────────────────────────────────────── */}
+        <div className="rounded-xl border border-neutral-300 bg-white overflow-hidden">
+          <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
+            <h2 className="font-serif text-lg font-semibold text-dark">Ready to Launch</h2>
+            <Link
+              href={`/business/${businessId}/products`}
+              className="text-xs text-primary-700 hover:underline"
+            >
+              Manage products →
+            </Link>
+          </div>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">
-              Product Name
-            </span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Malaysian Cyber Cat Hoodie"
-              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-dark outline-none focus:ring-2 focus:ring-primary-200"
-            />
-          </label>
+          {productsLoading ? (
+            <div className="flex items-center justify-center py-16 text-neutral-400 gap-2 text-sm">
+              <FiLoader className="animate-spin" /> Loading products…
+            </div>
+          ) : products.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-center px-8">
+              <FiPackage size={32} className="text-neutral-300" />
+              <p className="text-sm text-neutral-500">No products are ready for launch yet.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                href={`/business/${businessId}/products`}
+              >
+                Go to Products
+              </Button>
+            </div>
+          ) : (
+            <div className="divide-y divide-neutral-100">
+              {products.map((product) => {
+                const dp = extractDesignPayload(product);
+                const isSelected = selectedProduct?.id === product.id;
+                return (
+                  <button
+                    key={product.id}
+                    onClick={() => handleSelectProduct(product)}
+                    className={`w-full text-left px-5 py-4 flex items-center gap-4 transition-colors ${
+                      isSelected
+                        ? "bg-primary-50 border-l-2 border-l-primary-500"
+                        : "hover:bg-neutral-50 border-l-2 border-l-transparent"
+                    }`}
+                  >
+                    {/* Status dot */}
+                    <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-0.5 ${
+                      product.status === "ready" ? "bg-emerald-500" : "bg-blue-400"
+                    }`} />
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">
-              Description
-            </span>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={4}
-              placeholder="Futuristic cyber-y2k cat wearing songkok and batik pattern."
-              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-dark outline-none focus:ring-2 focus:ring-primary-200"
-            />
-          </label>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-dark truncate">
+                          {product.title}
+                        </p>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[product.status] ?? "bg-neutral-100 text-neutral-500"}`}>
+                          {product.status}
+                        </span>
+                      </div>
+                      {product.description && (
+                        <p className="text-xs text-neutral-400 mt-0.5 truncate">
+                          {product.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-3 mt-1.5">
+                        {dp?.blueprintId && (
+                          <span className="text-[10px] text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">
+                            Blueprint {dp.blueprintId}
+                          </span>
+                        )}
+                        {dp && Object.keys(dp.prices).length > 0 ? (
+                          <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <IoSparkles className="text-[9px]" />
+                            Prices set
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-neutral-400">
+                            Will research pricing
+                          </span>
+                        )}
+                      </div>
+                    </div>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">
-              Categories (comma-separated)
-            </span>
-            <input
-              value={categoriesInput}
-              onChange={(e) => setCategoriesInput(e.target.value)}
-              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-dark outline-none focus:ring-2 focus:ring-primary-200"
-            />
-          </label>
+                    {isSelected && (
+                      <FiCheckCircle className="text-primary-600 flex-shrink-0" size={16} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">
-              Tags (optional, comma-separated)
-            </span>
-            <input
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-dark outline-none focus:ring-2 focus:ring-primary-200"
-            />
-          </label>
+        {/* ── Right: launch controls + workflow ─────────────────────────── */}
+        <div className="space-y-4">
+          {/* Channel selector + launch */}
+          <div className="rounded-xl border border-neutral-300 bg-light p-5 space-y-4">
+            <h2 className="font-serif text-lg font-semibold text-dark">Publish to</h2>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">
-              Publish to
-            </span>
             {channels.length === 0 ? (
               <p className="text-sm text-neutral-400">
                 No sales channels connected.{" "}
@@ -496,164 +471,119 @@ const LaunchPage = ({ businessId }: LaunchPageProps) => {
                 ))}
               </select>
             )}
-          </label>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-neutral-600">
-              Launch Instruction (optional)
-            </span>
-            <textarea
-              value={userMessage}
-              onChange={(e) => setUserMessage(e.target.value)}
-              rows={3}
-              placeholder="Prioritize premium Malaysia-market pricing."
-              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-dark outline-none focus:ring-2 focus:ring-primary-200"
-            />
-          </label>
+            {selectedProduct ? (
+              <div className="rounded-lg border border-neutral-200 bg-white p-3 text-xs space-y-1">
+                <p className="font-medium text-dark">{selectedProduct.title}</p>
+                {designPayload?.blueprintId && (
+                  <p className="text-neutral-500">Blueprint ID: {designPayload.blueprintId}</p>
+                )}
+                {hasPrices && (
+                  <p className="text-emerald-700">
+                    Prices:{" "}
+                    {Object.entries(designPayload!.prices)
+                      .map(([k, v]) => `${k} RM${(v / 100).toFixed(0)}`)
+                      .join(" · ")}
+                  </p>
+                )}
+                {!hasPrices && (
+                  <p className="text-neutral-400 italic">Launch agent will research pricing.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-neutral-400 italic">
+                Select a product from the list to launch.
+              </p>
+            )}
 
-          <div className="flex items-center gap-3">
             <Button
               variant="secondary"
               size="md"
               onClick={handleLaunch}
-              disabled={!canSubmit || loading}
-              className="disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={!canLaunch}
+              className="w-full disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? (
+              {launching ? (
                 <span className="inline-flex items-center gap-2">
-                  <FiLoader className="animate-spin" />
-                  Launching...
+                  <FiLoader className="animate-spin" /> Launching…
                 </span>
               ) : (
-                "Launch Product"
+                <span className="inline-flex items-center gap-2">
+                  <IoSparkles />
+                  {selectedProduct
+                    ? hasPrices
+                      ? "Launch with Design Prices"
+                      : "Launch Product"
+                    : "Select a product"}
+                </span>
               )}
             </Button>
-
-            <Button
-              variant="outline"
-              size="md"
-              onClick={handleReset}
-              disabled={loading}
-            >
-              Reset
-            </Button>
           </div>
-        </div>
 
-        <div className="rounded-xl border border-neutral-300 bg-white p-5 space-y-5">
-          <div className="rounded-xl border border-primary-200 bg-primary-50 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="font-serif text-lg text-dark">Launch Workflow</h2>
-              <span className="text-xs font-medium text-primary-800 px-2.5 py-1 rounded-full bg-primary-100 border border-primary-200">
-                {progressPct}% complete
-              </span>
-            </div>
+          {/* Workflow steps */}
+          {(launching || launchData) && (
+            <div className="rounded-xl border border-primary-200 bg-primary-50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-serif text-base text-dark">Workflow</h3>
+                <span className="text-xs font-medium text-primary-800 px-2 py-0.5 rounded-full bg-primary-100 border border-primary-200">
+                  {progressPct}%
+                </span>
+              </div>
 
-            <div className="h-2 rounded-full bg-white border border-primary-200 overflow-hidden">
-              <div
-                className="h-full bg-primary-500 transition-all duration-500 ease-out"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
+              <div className="h-1.5 rounded-full bg-white border border-primary-200 overflow-hidden">
+                <div
+                  className="h-full bg-primary-500 transition-all duration-500"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
 
-            <div className="space-y-2">
-              {workflowSteps.map((step) => {
-                const icon =
-                  step.status === "done" ? (
-                    <FiCheckCircle className="text-primary-700" size={15} />
-                  ) : step.status === "running" ? (
-                    <FiLoader
-                      className="text-primary-700 animate-spin"
-                      size={15}
-                    />
-                  ) : step.status === "failed" ? (
-                    <FiAlertCircle className="text-red-600" size={15} />
-                  ) : (
-                    <FiCircle className="text-neutral-400" size={14} />
-                  );
-
-                return (
+              <div className="space-y-1.5">
+                {workflowSteps.map((step) => (
                   <div
                     key={step.key}
-                    className="rounded-lg border border-neutral-200 bg-white px-3 py-2.5 flex items-start gap-2.5"
+                    className="rounded-lg border border-neutral-200 bg-white px-3 py-2 flex items-start gap-2"
                   >
-                    <span className="mt-0.5 shrink-0">{icon}</span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-dark">
-                        {step.title}
-                      </p>
-                      <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
-                        {step.detail}
-                      </p>
+                    <span className="mt-0.5 shrink-0">
+                      {step.status === "done" ? (
+                        <FiCheckCircle className="text-primary-700" size={14} />
+                      ) : step.status === "running" ? (
+                        <FiLoader className="text-primary-700 animate-spin" size={14} />
+                      ) : step.status === "failed" ? (
+                        <FiAlertCircle className="text-red-500" size={14} />
+                      ) : (
+                        <FiCircle className="text-neutral-300" size={13} />
+                      )}
+                    </span>
+                    <div>
+                      <p className="text-xs font-medium text-dark">{step.title}</p>
+                      <p className="text-[11px] text-neutral-500 mt-0.5 leading-relaxed">{step.detail}</p>
                     </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          </div>
-
-          <h2 className="font-serif text-xl text-dark mb-4">Launch Result</h2>
-
-          {!data && (
-            <p className="text-sm text-neutral-500">
-              Run the launch agent to view pricing, Printify output, and the
-              final launch summary.
-            </p>
           )}
 
-          {data && (
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary-100 text-primary-800 text-xs font-medium">
-                <FiCheckCircle size={14} />
-                {data?.printify_result?.success
+          {/* Result */}
+          {launchData && (
+            <div className="rounded-xl border border-neutral-300 bg-white p-4 space-y-3">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-primary-100 text-primary-800 text-xs font-medium">
+                <FiCheckCircle size={12} />
+                {(launchData?.printify_result as Record<string, unknown>)?.success
                   ? "Launch completed"
                   : "Launch finished with fallback"}
               </div>
 
-              <div className="space-y-2 text-sm">
-                <p>
-                  <span className="text-neutral-500">Product:</span>{" "}
-                  <span className="text-dark font-medium">
-                    {data.product_name || "—"}
-                  </span>
-                </p>
-                <p>
-                  <span className="text-neutral-500">Launch ID:</span>{" "}
-                  <span className="text-dark">{data.launch_id || "—"}</span>
-                </p>
-                <p>
-                  <span className="text-neutral-500">Timestamp:</span>{" "}
-                  <span className="text-dark">{data.timestamp || "—"}</span>
-                </p>
+              <div className="text-xs space-y-1">
+                <p><span className="text-neutral-500">Launch ID:</span> <span className="text-dark font-mono">{launchData.launch_id as string}</span></p>
+                <p><span className="text-neutral-500">Printify product:</span> <span className="text-dark font-mono">{(launchData.printify_result as Record<string, unknown>)?.product_id as string}</span></p>
+                <p><span className="text-neutral-500">Publish status:</span> <span className="text-dark">{(launchData.publish_result as Record<string, unknown>)?.publish_status as string}</span></p>
               </div>
 
-              <div>
-                <h3 className="text-sm font-semibold text-dark mb-2">
-                  Suggested Prices
-                </h3>
-                <pre className="text-xs bg-light-secondary border border-neutral-300 rounded-lg p-3 overflow-auto text-dark">
-                  {JSON.stringify(data.optimal_prices || {}, null, 2)}
-                </pre>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-dark mb-2">
-                  Printify Result
-                </h3>
-                <pre className="text-xs bg-light-secondary border border-neutral-300 rounded-lg p-3 overflow-auto text-dark">
-                  {JSON.stringify(data.printify_result || {}, null, 2)}
-                </pre>
-              </div>
-
-              {data.final_message && (
-                <div>
-                  <h3 className="text-sm font-semibold text-dark mb-2">
-                    Agent Summary
-                  </h3>
-                  <p className="text-sm text-neutral-600 leading-relaxed">
-                    {data.final_message}
-                  </p>
-                </div>
+              {typeof launchData.final_message === "string" && launchData.final_message && (
+                <p className="text-xs text-neutral-600 leading-relaxed border-t border-neutral-100 pt-3">
+                  {launchData.final_message}
+                </p>
               )}
             </div>
           )}

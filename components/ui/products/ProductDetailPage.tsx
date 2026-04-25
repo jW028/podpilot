@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Product } from "@/lib/types";
+import type { DesignToLaunchPayload } from "@/lib/types";
 import ProductCanvas from "@/components/ui/products/ProductCanvas";
 import DesignAgent from "@/components/ui/products/DesignAgent";
 import Button from "@/components/ui/shared/Button";
@@ -12,6 +13,7 @@ import type { Block } from "@/components/ui/products/EditableBlock";
 import { Dot, ChevronLeft, ChevronDown, PackageX } from "lucide-react";
 import { MdCloudUpload } from "react-icons/md";
 import LoadingState from "../shared/LoadingState";
+import { useLaunchAgent } from "@/hooks/useLaunchAgent";
 
 interface ProductDetailPageProps {
   businessId: string;
@@ -110,6 +112,7 @@ const ProductDetailPage = ({
   isCreating = false,
 }: ProductDetailPageProps) => {
   const router = useRouter();
+  const { runLaunch } = useLaunchAgent(businessId, productId);
 
   const [product, setProduct] = useState<Product | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -179,7 +182,7 @@ const ProductDetailPage = ({
         name: "product_image",
         type: "image",
         label: "Product Design",
-        value: productImageUrl || "",
+        value: "",
         placeholder: "Upload your product design image",
       });
 
@@ -218,7 +221,7 @@ const ProductDetailPage = ({
 
       setBlocks(newBlocks);
     },
-    [productImageUrl],
+    [],
   );
 
   const initializeBlocksForCreation = useCallback(() => {
@@ -505,6 +508,21 @@ const ProductDetailPage = ({
   // Keep handleConfirmProduct for DesignAgent compatibility
   const handleConfirmProduct = async () => {
     await handleStatusChange("ready");
+  };
+
+  const handleLaunchFromDesign = async (designPayload: DesignToLaunchPayload) => {
+    const payload = buildPayloadFromBlocks();
+    await runLaunch({
+      productData: {
+        name: (payload.title as string) || product?.title || "Product",
+        description: (payload.description as string) || "",
+        categories: designPayload.categories,
+        tags: designPayload.tags,
+      },
+      designPayload,
+    });
+    // Update product status to pushed after launch is triggered
+    await handleStatusChange("pushed");
   };
 
   const handleDeleteProduct = async () => {
@@ -819,6 +837,7 @@ const ProductDetailPage = ({
           onProductSelect={handleProductSelect}
           onFieldUpdate={handleFieldUpdate}
           onConfirm={handleConfirmProduct}
+          onLaunch={handleLaunchFromDesign}
         />
       </div>
 

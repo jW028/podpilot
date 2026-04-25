@@ -1,5 +1,44 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import type { DesignToLaunchPayload } from "@/lib/types";
+
+function getServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+}
+
+async function trackActivity(businessId: string, action: string): Promise<string | null> {
+  try {
+    const { data } = await getServiceClient()
+      .from("workflows")
+      .insert({
+        business_id: businessId,
+        type: "agent_active",
+        source_agent: "design_agent",
+        target_agent: "design_agent",
+        state: "processing",
+        payload: { action },
+      })
+      .select("id")
+      .single();
+    return data?.id ?? null;
+  } catch { return null; }
+}
+
+async function completeActivity(id: string | null) {
+  if (!id) return;
+  try {
+    const { error } = await getServiceClient()
+      .from("workflows")
+      .update({ state: "processed", processed_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) console.error("[Design Agent] Failed to complete activity row:", error.message);
+  } catch (e) {
+    console.error("[Design Agent] completeActivity threw:", e);
+  }
+}
 
 interface ChatMessage {
   role: "assistant" | "user";
@@ -29,6 +68,7 @@ interface ChatResponsePayload {
   fieldSuggestions?: FieldSuggestion[];
   blueprintSuggestions?: BlueprintSuggestion[];
   marketTrends?: string;
+  launchPayload?: DesignToLaunchPayload;
 }
 
 const parseModelJson = (content: string): unknown => {
@@ -230,8 +270,13 @@ export async function POST(
         name?: string;
         niche?: string;
       };
-      action?: "scrape_trends" | "suggest_products" | "chat";
+      action?: "scrape_trends" | "suggest_products" | "chat" | "finalize";
       userIdea?: string;
+      finalizePayload?: {
+        blueprintId: number;
+        fieldSuggestions: FieldSuggestion[];
+        categories?: string[];
+      };
     };
 
     if (!businessId) {
@@ -239,6 +284,53 @@ export async function POST(
         { success: false, message: "Business ID is required." },
         { status: 400 },
       );
+    }
+
+    // Handle finalize action: extract launch-ready payload from confirmed field suggestions
+    if (body.action === "finalize" && body.finalizePayload) {
+      const { blueprintId, fieldSuggestions, categories = [] } = body.finalizePayload;
+
+      const prices: Record<string, number> = {};
+      let description = body.productContext?.description ?? "";
+      const tags: string[] = [];
+      let pricingReasoning = "";
+      let printProviderId: number | undefined;
+      const variantIds: number[] = [];
+
+      for (const f of fieldSuggestions) {
+        if (f.fieldName.startsWith("price_") && typeof f.value === "number") {
+          const key = f.fieldName.replace("price_", "");
+          prices[key] = f.value;
+        } else if (f.fieldName === "pricing_reasoning" && typeof f.value === "string") {
+          pricingReasoning = f.value;
+        } else if (f.fieldName === "description" && typeof f.value === "string") {
+          description = f.value;
+        } else if (f.fieldName === "tags" && Array.isArray(f.value)) {
+          tags.push(...(f.value as string[]));
+        } else if (f.fieldName === "print_provider_id" && typeof f.value === "number") {
+          printProviderId = f.value;
+        } else if (f.fieldName === "variant_ids" && Array.isArray(f.value)) {
+          variantIds.push(...(f.value as unknown as number[]));
+        }
+      }
+
+      const launchPayload: DesignToLaunchPayload = {
+        productName: body.productContext?.title ?? "Product",
+        description,
+        blueprintId,
+        printProviderId,
+        variantIds: variantIds.length > 0 ? variantIds : undefined,
+        prices,
+        pricingReasoning: pricingReasoning || undefined,
+        tags: tags.length > 0 ? tags : undefined,
+        categories,
+      };
+
+      return NextResponse.json({
+        success: true,
+        data: { reply: "Product design finalized and ready to launch.", launchPayload },
+        message: "Design finalized.",
+      });
     }
 
     if (
@@ -269,6 +361,9 @@ export async function POST(
     const productDescription = body.productContext?.description || "";
     const productAttributes = body.productContext?.attributes;
     const userIdea = body.userIdea || "";
+
+    const activityId = await trackActivity(businessId, body.action ?? "chat");
+    try {
 
     // Fetch brand profile for richer context
     const brandProfile = await fetchBrandProfile(businessId);
@@ -333,6 +428,8 @@ When you have enough context to suggest specific field values for the product, i
 - options: array of options for selection type fields
 - placeholder: optional placeholder text
 - locked: true for fields that should not be user-editable (like blueprint_id, print_provider_id)
+
+When the user confirms or asks about pricing, include price fields in "fieldSuggestions" using fieldName "price_tshirt", "price_hoodie", "price_mug" etc. with type "number" and value in cents (e.g. 5500 = RM55.00). Also include fieldName "pricing_reasoning" with type "text" summarising why these prices were chosen. These pricing fields will be passed directly to the launch agent.
 
 Return STRICT JSON with this exact shape:
 {
@@ -460,6 +557,9 @@ Be conversational and concise. When the user first describes their idea, referen
       data: payload,
       message: "Design guidance provided successfully.",
     });
+    } finally {
+      await completeActivity(activityId);
+    }
   } catch (error) {
     console.error(error);
     return NextResponse.json(
