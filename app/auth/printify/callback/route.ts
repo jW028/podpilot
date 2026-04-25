@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       throw new Error("Failed to fetch Printify shops");
     }
 
-    const shopsData = await shopsResponse.json() as { data?: PrintifyShop[] };
+    const shopsData = (await shopsResponse.json()) as { data?: PrintifyShop[] };
     const shops = shopsData.data || [];
 
     if (shops.length === 0) {
@@ -110,8 +110,8 @@ export async function GET(request: NextRequest) {
     // Build sales_channels array from all shops
     const salesChannels: PrintifyChannel[] = shops.map((shop) => ({
       shop_id: String(shop.id),
-      title: shop.title || '',
-      channel: shop.sales_channel || 'disconnected',
+      title: shop.title || "",
+      channel: shop.sales_channel || "disconnected",
     }));
 
     // Create/update user in Supabase with Printify info
@@ -141,19 +141,18 @@ export async function GET(request: NextRequest) {
       // Sign up with temporary Printify email
       const printifyEmail = `printify-${primaryShop.id}-${Date.now()}@podpilot.local`;
 
-      const { error: signUpError } =
-        await supabase.auth.signUp({
-          email: printifyEmail,
-          password: Math.random().toString(36).substring(16), // Random password (OAuth only)
-          options: {
-            data: {
-              printify_connected: true,
-              printify_shop_id: primaryShop.id,
-              printify_shop_title: primaryShop.title,
-              printify_sales_channels: salesChannels,
-            },
+      const { error: signUpError } = await supabase.auth.signUp({
+        email: printifyEmail,
+        password: Math.random().toString(36).substring(16), // Random password (OAuth only)
+        options: {
+          data: {
+            printify_connected: true,
+            printify_shop_id: primaryShop.id,
+            printify_shop_title: primaryShop.title,
+            printify_sales_channels: salesChannels,
           },
-        });
+        },
+      });
 
       if (signUpError) {
         console.error("Signup error:", signUpError);
