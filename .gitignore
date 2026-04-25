@@ -44,3 +44,4 @@ next-env.d.ts
 /references
 references/
 .vercel
+.env*.local
